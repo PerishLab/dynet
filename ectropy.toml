@@ -1,0 +1,31 @@
+[comment]
+allow = false
+
+[[grant]]
+paths = ["crates/*/tests/**/*.rs"]
+syntax = "test"
+
+[[grant]]
+paths = ["crates/*/tests/**/*.rs"]
+syntax = "environment"
+
+[limit]
+block = 4
+fanout = 10
+file = 300
+markup = 8
+param = 4
+path = 3
+
+[module]
+roots = [
+    "crates/*/src",
+    "crates/*/tests",
+]
+
+[scan]
+exclude = ["**/target/**"]
+include = ["crates/**/*.rs"]
+
+[word]
+single = true

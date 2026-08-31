@@ -1,0 +1,12 @@
+[package]
+name = "dynet-api"
+description = "Reusable API boundary for Dynet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "dynet_api"
+path = "src/lib.rs"

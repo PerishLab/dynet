@@ -1,0 +1,24 @@
+name: release-stable
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    uses: ./.forgejo/workflows/ship.yml
+    with:
+      guard_contexts: '["guard / guard (push)"]'
+    secrets:
+      publish_access: ${{ secrets.RELEASE_PUBLISH_S3_ACCESS_KEY }}
+      publish_secret: ${{ secrets.RELEASE_PUBLISH_S3_SECRET_KEY }}
+      publish_bucket: ${{ secrets.RELEASE_PUBLISH_S3_BUCKET }}
+      publish_endpoint: ${{ secrets.RELEASE_PUBLISH_S3_ENDPOINT }}
+      activate_access: ${{ secrets.RELEASE_ACTIVATE_S3_ACCESS_KEY }}
+      activate_secret: ${{ secrets.RELEASE_ACTIVATE_S3_SECRET_KEY }}
+      activate_bucket: ${{ secrets.RELEASE_ACTIVATE_S3_BUCKET }}
+      activate_endpoint: ${{ secrets.RELEASE_ACTIVATE_S3_ENDPOINT }}
+      registry_token: ${{ secrets.RELEASE_REGISTRY_TOKEN }}
+      site_token: ${{ secrets.PLUMB_SITE_TOKEN }}

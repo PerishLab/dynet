@@ -1,0 +1,350 @@
+name: ship
+
+on:
+  workflow_call:
+    inputs:
+      guard_contexts:
+        description: JSON commit-status contexts proving the canonical source guard
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.repository }}-ship-${{ startsWith(github.ref, 'refs/heads/release/') && 'consensus' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: docker
+    container:
+      image: git.perish.top/perishfire/images/forge@sha256:3bc746c0428576eb47c1ece051f2dfa6f6016094be6565977268f76dc1f269a0
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      commit: ${{ steps.plan.outputs.commit }}
+      version: ${{ steps.plan.outputs.version }}
+      targets: ${{ steps.plan.outputs.targets }}
+      project: ${{ steps.plan.outputs.project }}
+    env:
+      PLUMB_RELEASE_ROOT: .
+      PLUMB_RELEASE_COMMIT: ${{ github.sha }}
+      PLUMB_RELEASE_SOURCE: ${{ github.ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Install bootstrap Plumb
+        shell: bash
+        run: |
+          set -eu
+          held=$(curl -fsSL "https://releases.plumb.perish.uk/v1/channels/beta.json" 2>/dev/null \
+            | sed -n 's/.*"releaseVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') || held=""
+          if [ -n "$held" ]; then
+            seat="$RUNNER_TEMP/plumb-$held"
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh -s -- install \
+              --channel beta --version "$held" \
+              --install-root "$seat/versions" --bin-dir "$seat/bin"
+            printf '%s\n' "$seat/bin" >> "$GITHUB_PATH"
+            tool="$seat/bin/plumb"
+          else
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh
+            printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
+            tool="$HOME/.local/bin/plumb"
+          fi
+          "$tool" depot sync
+
+
+      - name: Plan this release
+        id: plan
+        shell: bash
+        run: |
+          set -eu
+          if plumb release plan --help >/dev/null 2>&1; then
+            plan=$(plumb release plan)
+            PLUMB_RELEASE_VERSION=$(printf '%s' "$plan" | jq -r '.version')
+            PLUMB_RELEASE_CHANNEL=$(printf '%s' "$plan" | jq -r '.channel')
+            PLUMB_RELEASE_PROJECT=$(printf '%s' "$plan" | jq -c '.project')
+          else
+            PLUMB_RELEASE_VERSION=$(plumb release reference)
+            export PLUMB_RELEASE_VERSION
+            PLUMB_RELEASE_CHANNEL=$(plumb release channel)
+            export PLUMB_RELEASE_CHANNEL
+            plumb release source
+            PLUMB_RELEASE_PROJECT=$(plumb release surface | jq -c '.project')
+          fi
+          export PLUMB_RELEASE_VERSION
+          export PLUMB_RELEASE_CHANNEL
+          {
+            echo "channel=$PLUMB_RELEASE_CHANNEL"
+            echo "commit=$PLUMB_RELEASE_COMMIT"
+            echo "version=$PLUMB_RELEASE_VERSION"
+            echo "targets=$(plumb ship binary matrix)"
+            echo "project=$PLUMB_RELEASE_PROJECT"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.channel != 'stable'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.targets) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      PLUMB_RELEASE_ROOT: .
+      PLUMB_RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      PLUMB_RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      PLUMB_RELEASE_COMMIT: ${{ needs.resolve.outputs.commit }}
+      PLUMB_RELEASE_TARGET: ${{ matrix.target }}
+      PLUMB_RELEASE_ARTIFACTS: dist/${{ needs.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.commit }}
+
+      - name: Install bootstrap Plumb
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          held=$(curl -fsSL "https://releases.plumb.perish.uk/v1/channels/beta.json" 2>/dev/null \
+            | sed -n 's/.*"releaseVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') || held=""
+          if [ -n "$held" ]; then
+            seat="$RUNNER_TEMP/plumb-$held"
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh -s -- install \
+              --channel beta --version "$held" \
+              --install-root "$seat/versions" --bin-dir "$seat/bin"
+            printf '%s\n' "$seat/bin" >> "$GITHUB_PATH"
+            tool="$seat/bin/plumb"
+          else
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh
+            printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
+            tool="$HOME/.local/bin/plumb"
+          fi
+          "$tool" depot sync
+
+      - name: Install stable Plumb on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manager = Join-Path $env:RUNNER_TEMP 'manage-plumb.ps1'
+          $seat = Join-Path $env:RUNNER_TEMP 'plumb-bootstrap'
+          $versions = Join-Path $seat 'versions'
+          $bin = Join-Path $seat 'bin'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://releases.plumb.perish.uk/manage.ps1' -OutFile $manager
+          & $manager install --install-root $versions --bin-dir $bin
+          & (Join-Path $bin 'plumb.exe') depot sync
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
+
+
+      - name: Add the declared Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build one declared target
+        run: plumb ship binary build
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/${{ needs.resolve.outputs.version }}/*
+
+  seal:
+    needs: [resolve, build]
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (needs.resolve.outputs.channel == 'stable' || needs.build.result == 'success')
+    runs-on: docker
+    container:
+      image: git.perish.top/perishfire/images/forge@sha256:3bc746c0428576eb47c1ece051f2dfa6f6016094be6565977268f76dc1f269a0
+    outputs:
+      manager_unix: ${{ steps.surface.outputs.manager_unix }}
+      manager_windows: ${{ steps.surface.outputs.manager_windows }}
+    env:
+      DOCKER_HOST: tcp://172.17.0.1:2375
+      PLUMB_RELEASE_ROOT: .
+      PLUMB_RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      PLUMB_RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      PLUMB_RELEASE_COMMIT: ${{ needs.resolve.outputs.commit }}
+      PLUMB_RELEASE_ARTIFACTS: dist/${{ needs.resolve.outputs.version }}
+      PLUMB_RELEASE_TOOLCHAIN: git.perish.top/perishfire/images/forge@sha256:3bc746c0428576eb47c1ece051f2dfa6f6016094be6565977268f76dc1f269a0
+      PLUMB_RELEASE_OUTPUT: .plumb-release/capsule
+      PLUMB_RELEASE_CAPSULE: .plumb-release/capsule/capsule.json
+      PLUMB_PUBLISH_ACCESS: ${{ secrets.publish_access }}
+      PLUMB_PUBLISH_SECRET: ${{ secrets.publish_secret }}
+      PLUMB_PUBLISH_BUCKET: ${{ secrets.publish_bucket }}
+      PLUMB_PUBLISH_ENDPOINT: ${{ secrets.publish_endpoint }}
+      PLUMB_ACTIVATE_ACCESS: ${{ secrets.activate_access }}
+      PLUMB_ACTIVATE_SECRET: ${{ secrets.activate_secret }}
+      PLUMB_ACTIVATE_BUCKET: ${{ secrets.activate_bucket }}
+      PLUMB_ACTIVATE_ENDPOINT: ${{ secrets.activate_endpoint }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.commit }}
+
+      - name: Install bootstrap Plumb
+        shell: bash
+        run: |
+          set -eu
+          held=$(curl -fsSL "https://releases.plumb.perish.uk/v1/channels/beta.json" 2>/dev/null \
+            | sed -n 's/.*"releaseVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') || held=""
+          if [ -n "$held" ]; then
+            seat="$RUNNER_TEMP/plumb-$held"
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh -s -- install \
+              --channel beta --version "$held" \
+              --install-root "$seat/versions" --bin-dir "$seat/bin"
+            printf '%s\n' "$seat/bin" >> "$GITHUB_PATH"
+            tool="$seat/bin/plumb"
+          else
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh
+            printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
+            tool="$HOME/.local/bin/plumb"
+          fi
+          "$tool" depot sync
+
+
+      - name: Require canonical guard evidence
+        env:
+          PLUMB_GUARD_API: ${{ github.api_url }}
+          PLUMB_GUARD_REPOSITORY: ${{ github.repository }}
+          PLUMB_GUARD_TOKEN: ${{ github.token }}
+          PLUMB_GUARD_CONTEXTS: ${{ inputs.guard_contexts }}
+        run: plumb release evidence
+
+      - name: Fetch the derived promotion proof and its binary artifacts
+        if: needs.resolve.outputs.channel == 'stable'
+        env:
+          PLUMB_RELEASE_PROMOTION: .plumb-release/promotion.json
+        run: plumb release promote
+
+      - uses: actions/download-artifact@v3
+        if: needs.resolve.outputs.channel != 'stable'
+        with:
+          path: dist/${{ needs.resolve.outputs.version }}
+
+      - name: Assemble the declared binary shape
+        run: plumb ship binary assemble
+
+      - name: Compile the exact capsule
+        if: needs.resolve.outputs.channel != 'stable'
+        run: plumb release compile
+
+      - name: Compile the stable capsule
+        if: needs.resolve.outputs.channel == 'stable'
+        env:
+          PLUMB_RELEASE_PROMOTION: .plumb-release/promotion.json
+        run: plumb release compile
+
+      - name: Publish and read back the exact release
+        shell: bash
+        run: |
+          set -eu
+          plumb ship binary publish
+          plumb ship binary verify
+
+      - name: Point the channel at what this run published
+        shell: bash
+        run: |
+          set -eu
+          plumb release activate
+
+      - name: Activate the stable consensus
+        if: needs.resolve.outputs.channel == 'stable'
+        shell: bash
+        run: |
+          set -eu
+          plumb ship binary activate
+          PLUMB_RELEASE_ACTIVATED=true plumb ship binary verify
+
+      - name: Name the generated managers
+        id: surface
+        shell: bash
+        run: |
+          set -eu
+          if [ "$PLUMB_RELEASE_CHANNEL" = stable ]; then
+            seat="$PLUMB_RELEASE_OUTPUT/stable.json"
+          else
+            seat="$PLUMB_RELEASE_OUTPUT/seal.json"
+          fi
+          {
+            echo "manager_unix=$(jq -r '.managers.unix.url' "$seat")"
+            echo "manager_windows=$(jq -r '.managers.windows.url // ""' "$seat")"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release-capsule
+          path: .plumb-release/capsule
+
+  smoke:
+    needs: [resolve, seal]
+    if: needs.resolve.outputs.channel != 'stable'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.targets) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      PLUMB_RELEASE_ROOT: .
+      PLUMB_RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.commit }}
+
+      - name: Install bootstrap Plumb
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          held=$(curl -fsSL "https://releases.plumb.perish.uk/v1/channels/beta.json" 2>/dev/null \
+            | sed -n 's/.*"releaseVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') || held=""
+          if [ -n "$held" ]; then
+            seat="$RUNNER_TEMP/plumb-$held"
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh -s -- install \
+              --channel beta --version "$held" \
+              --install-root "$seat/versions" --bin-dir "$seat/bin"
+            printf '%s\n' "$seat/bin" >> "$GITHUB_PATH"
+            tool="$seat/bin/plumb"
+          else
+            curl -fsSL https://releases.plumb.perish.uk/manage.sh | sh
+            printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
+            tool="$HOME/.local/bin/plumb"
+          fi
+          "$tool" depot sync
+
+      - name: Install stable Plumb on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manager = Join-Path $env:RUNNER_TEMP 'manage-plumb.ps1'
+          $seat = Join-Path $env:RUNNER_TEMP 'plumb-bootstrap'
+          $versions = Join-Path $seat 'versions'
+          $bin = Join-Path $seat 'bin'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://releases.plumb.perish.uk/manage.ps1' -OutFile $manager
+          & $manager install --install-root $versions --bin-dir $bin
+          & (Join-Path $bin 'plumb.exe') depot sync
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
+
+
+      - name: Smoke the generated manager
+        if: runner.os != 'Windows'
+        env:
+          PLUMB_RELEASE_URL: ${{ needs.seal.outputs.manager_unix }}
+        run: plumb ship binary smoke
+
+      - name: Smoke the generated manager on Windows
+        if: runner.os == 'Windows'
+        env:
+          PLUMB_RELEASE_URL: ${{ needs.seal.outputs.manager_windows }}
+        run: plumb ship binary smoke
+

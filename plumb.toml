@@ -1,0 +1,53 @@
+[layout]
+
+[[layout.seat]]
+path = "crates/*"
+anchor = ["Cargo.toml"]
+note = "The Dynet API and CLI Rust workspace members."
+
+[[layout.seat]]
+path = ".cargo"
+note = "Cargo registry configuration."
+
+[[layout.seat]]
+path = ".forgejo"
+note = "The canonical forge namespace."
+
+[[layout.seat]]
+path = ".runseal"
+note = "Committed inert Runseal resources."
+
+[[layout.seat]]
+path = ".plumb"
+note = "Plumb-owned records."
+
+[[layout.file]]
+name = ["AGENTS.md", "README.md"]
+note = "Repository guidance and public introduction."
+
+[[layout.file]]
+name = ["LICENSE", ".gitignore", ".gitattributes"]
+note = "Repository identity and Git policy."
+
+[[layout.file]]
+name = ["Cargo.toml", "Cargo.lock"]
+note = "Rust workspace anchors."
+
+[[layout.file]]
+name = ["plumb.toml", "ectropy.toml", "runseal.toml"]
+note = "Governance and isolated runtime declarations."
+
+[release]
+product = "dynet"
+authority = "https://releases.dynet.perish.uk"
+binaries = ["dynet"]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[workflow.hash.guard]
+"rust" = ["suite://cargo"]
+"ectropy" = ["ectropy.toml", "crates"]
+"plumb" = ["*"]
