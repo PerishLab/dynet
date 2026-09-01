@@ -1,0 +1,12 @@
+[package]
+name = "dynet-core"
+description = "Shared semantic kernel and contracts for Dynet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "dynet_core"
+path = "src/lib.rs"

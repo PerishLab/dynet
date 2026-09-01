@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/api", "crates/cli"]
+members = ["crates/api", "crates/cli", "crates/lib"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,4 +11,5 @@ repository = "https://git.perish.top/PerishLab/dynet"
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
 dynet-api = { path = "crates/api" }
+dynet-core = { path = "crates/lib" }
 plumb = { version = "0", registry = "perish", default-features = false }
