@@ -1,10 +1,9 @@
-use super::pump::Warren;
+use super::pump::{Pools, Warren};
 use crate::host::Route;
 use crate::outbound::{Roster, Tunnel};
 use crate::resolver::{self, Answer, Packet, QUAD};
-use dynet_core::{Decision, Domain, Error, Ground, Selector};
+use dynet_core::{Decision, Domain, Error, Ground, Name};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(200);
@@ -18,25 +17,18 @@ struct Call {
 
 struct Post<'a> {
     warren: &'a Warren<'a>,
-    selector: &'a Mutex<Selector>,
+    pools: &'a Pools,
     socket: &'a UdpSocket,
-    voice: &'a Mutex<Vec<String>>,
 }
 
-pub fn attend(
-    warren: &Warren,
-    selector: &Mutex<Selector>,
-    voice: &Mutex<Vec<String>>,
-    span: Duration,
-) -> Result<(), Error> {
+pub fn attend(warren: &Warren, pools: &Pools, span: Duration) -> Result<(), Error> {
     let socket = UdpSocket::bind(("0.0.0.0", warren.port))
         .map_err(|error| Error::new(format!("cannot hold the resolver port: {error}")))?;
     let _ = socket.set_read_timeout(Some(REST));
     let post = Post {
         warren,
-        selector,
+        pools,
         socket: &socket,
-        voice,
     };
     let started = Instant::now();
     std::thread::scope(|scope| {
@@ -61,9 +53,7 @@ impl Post<'_> {
             Ok(spoken) => spoken,
             Err(error) => format!("refused: {error}"),
         };
-        if let Ok(mut held) = self.voice.lock() {
-            held.push(spoken);
-        }
+        (self.warren.told)(&spoken);
     }
 
     fn settle(&self, call: &Call) -> Result<String, Error> {
@@ -83,13 +73,13 @@ impl Post<'_> {
             self.speak(&plain, call)?;
             return Ok(format!("{} left to the upstream", query.name));
         }
-        let (label, framed) = self.carry(&call.asked)?;
+        let (label, framed) = self.carry(&call.asked, decision.cluster())?;
         let reply = framed
             .get(2..)
             .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
-        self.speak(reply, call)?;
         let found = resolver::read(&framed)?;
         let told = self.keep(&domain, &found, &decision)?;
+        self.speak(reply, call)?;
         Ok(format!(
             "{} through {label} to cluster {} on ground {:?} gave {told}",
             query.name,
@@ -122,9 +112,12 @@ impl Post<'_> {
         Ok(addresses.len())
     }
 
-    fn carry(&self, asked: &[u8]) -> Result<(String, Vec<u8>), Error> {
-        let label = self
-            .selector
+    fn carry(&self, asked: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
+        let pool = self
+            .pools
+            .get(wanted)
+            .ok_or_else(|| Error::new(format!("cluster {} carries no pool here", wanted.get())))?;
+        let label = pool
             .lock()
             .map_err(|_| poisoned())?
             .choose(Instant::now())

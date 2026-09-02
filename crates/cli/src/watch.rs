@@ -43,15 +43,17 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
     }
     let table = Table::new(rules, Name::new("direct")?);
     let router = std::sync::Mutex::new(Router::new(table));
+    let told = |line: &str| println!("  {line}");
     let warren = inbound::Warren {
         instance,
         entries: &entries,
-        cluster: wanted,
+        clusters: held.clusters(),
         router: &router,
         ports: &listed(&errand.ports)?,
         port: errand.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(),
+        told: &told,
     };
     let served = inbound::serve(&warren, std::time::Duration::from_secs(errand.seconds))?;
     Ok(recount(&served))
@@ -90,15 +92,9 @@ pub fn span(claim: &str) -> Result<Range, Error> {
 }
 
 pub fn recount(served: &inbound::Served) -> ExitCode {
-    for spoken in &served.spoken {
-        println!("  asked {spoken}");
-    }
-    for trail in &served.trails {
-        println!("  {trail}");
-    }
     println!(
-        "accepted {}, answered {}, faulted {}, named {}",
-        served.accepted, served.answered, served.faulted, served.named
+        "accepted {}, answered {}, faulted {}, named {}, refused {}",
+        served.accepted, served.answered, served.faulted, served.named, served.refused
     );
     match served.accepted > 0 && served.faulted == 0 && served.named > 0 {
         true => ExitCode::SUCCESS,

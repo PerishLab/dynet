@@ -3,7 +3,7 @@ use super::strand::{Strand, downward, upward};
 use super::warden;
 use crate::outbound::{Book, Roster};
 use crate::subscription::Entry;
-use dynet_core::{Cluster, Error, Ground, Instance, Policy, Router, Selector, Verdict};
+use dynet_core::{Cluster, Error, Ground, Instance, Name, Policy, Router, Selector, Verdict};
 use smoltcp::iface::{Config, Interface, SocketHandle as Seat, SocketSet};
 use smoltcp::phy::{Medium, TunTapInterface, wait};
 use smoltcp::socket::tcp;
@@ -19,15 +19,18 @@ const HALF: Duration = Duration::from_secs(600);
 const FLOOR: f64 = 0.05;
 const REST: Duration = Duration::from_millis(5);
 
+pub type Pools = HashMap<Name, Mutex<Selector>>;
+
 pub struct Warren<'a> {
     pub instance: &'a Instance,
     pub entries: &'a [Entry],
-    pub cluster: &'a Cluster,
+    pub clusters: &'a [Cluster],
     pub router: &'a Mutex<Router>,
     pub ports: &'a [u16],
     pub port: u16,
     pub upstream: &'a str,
     pub book: &'a Book,
+    pub told: &'a (dyn Fn(&str) + Sync),
 }
 
 #[derive(Debug, Default)]
@@ -36,8 +39,7 @@ pub struct Served {
     pub answered: usize,
     pub faulted: usize,
     pub named: usize,
-    pub trails: Vec<String>,
-    pub spoken: Vec<String>,
+    pub refused: usize,
 }
 
 struct Weft<'a> {
@@ -51,7 +53,7 @@ struct Loom<'a> {
     sockets: SocketSet<'a>,
     watching: HashMap<Seat, u16>,
     strands: HashMap<Seat, Strand>,
-    selector: &'a Mutex<Selector>,
+    pools: &'a Pools,
     served: Served,
 }
 
@@ -60,14 +62,9 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
         .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
     let started = Instant::now();
     let mut iface = raise(&mut device, started);
-    let selector = Mutex::new(Selector::new(
-        warren.cluster,
-        Policy::new(HALF, FLOOR)?,
-        started,
-    ));
-    let voice = Mutex::new(Vec::new());
-    let mut served = std::thread::scope(|scope| {
-        scope.spawn(|| stand(warren, &selector, &voice, span));
+    let pools = gather(warren, started)?;
+    Ok(std::thread::scope(|scope| {
+        scope.spawn(|| stand(warren, &pools, span));
         let mut weft = Weft {
             device: &mut device,
             iface: &mut iface,
@@ -78,7 +75,7 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
             sockets: SocketSet::new(Vec::new()),
             watching: HashMap::new(),
             strands: HashMap::new(),
-            selector: &selector,
+            pools: &pools,
             served: Served::default(),
         };
         for port in warren.ports {
@@ -86,18 +83,24 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
         }
         loom.run(warren, &mut weft);
         loom.served
-    });
-    served.spoken = voice.into_inner().unwrap_or_default();
-    Ok(served)
+    }))
 }
 
-fn stand(warren: &Warren, selector: &Mutex<Selector>, voice: &Mutex<Vec<String>>, span: Duration) {
-    let Err(error) = warden::attend(warren, selector, voice, span) else {
+fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
+    let policy = Policy::new(HALF, FLOOR)?;
+    let mut pools = Pools::new();
+    for cluster in warren.clusters {
+        let selector = Selector::new(cluster, policy, started);
+        pools.insert(cluster.name().clone(), Mutex::new(selector));
+    }
+    Ok(pools)
+}
+
+fn stand(warren: &Warren, pools: &Pools, span: Duration) {
+    let Err(error) = warden::attend(warren, pools, span) else {
         return;
     };
-    if let Ok(mut held) = voice.lock() {
-        held.push(format!("the resolver refused to start: {error}"));
-    }
+    (warren.told)(&format!("the resolver refused to start: {error}"));
 }
 
 fn beat(started: Instant) -> Beat {
@@ -146,7 +149,7 @@ impl Loom<'_> {
             self.adopt(seat, warren);
         }
         for seat in self.strands.keys().copied().collect::<Vec<Seat>>() {
-            self.shuttle(seat);
+            self.shuttle(seat, warren);
         }
     }
 
@@ -158,8 +161,33 @@ impl Loom<'_> {
         let Some(target) = socket.local_endpoint() else {
             return;
         };
-        let Some(label) = self
-            .selector
+        let Ok(router) = warren.router.lock() else {
+            return;
+        };
+        let decision = router.reached(target.addr.into(), Instant::now());
+        drop(router);
+        let port = self.watching.remove(&seat).unwrap_or(target.port);
+        self.watch(port);
+        match self.pools.get(decision.cluster()) {
+            None => self.refuse(seat, warren, &decision),
+            Some(pool) => self.begin(seat, warren, pool),
+        }
+        if decision.ground() == Ground::Named {
+            self.served.named += 1;
+        }
+    }
+
+    fn refuse(&mut self, seat: Seat, warren: &Warren, decision: &dynet_core::Decision) {
+        (warren.told)(&format!(
+            "closed: cluster {} carries no pool here",
+            decision.cluster().get()
+        ));
+        self.served.refused += 1;
+        self.sockets.get_mut::<tcp::Socket>(seat).abort();
+    }
+
+    fn begin(&mut self, seat: Seat, warren: &Warren, pool: &Mutex<Selector>) {
+        let Some(label) = pool
             .lock()
             .ok()
             .and_then(|mut held| held.choose(Instant::now()))
@@ -170,41 +198,30 @@ impl Loom<'_> {
         let Ok(endpoint) = posted else {
             return;
         };
-        let Ok(router) = warren.router.lock() else {
+        let socket = self.sockets.get_mut::<tcp::Socket>(seat);
+        let Some(target) = socket.local_endpoint() else {
             return;
         };
-        let ground = router.reached(target.addr.into(), Instant::now());
-        drop(router);
-        self.served.trails.push(format!(
-            "{target} through {} on ground {:?} to cluster {}",
-            label.get(),
-            ground.ground(),
-            ground.cluster().get()
-        ));
+        (warren.told)(&format!("{target} through {}", label.get()));
         self.served.accepted += 1;
-        if ground.ground() == Ground::Named {
-            self.served.named += 1;
-        }
         let link = Link::open(endpoint, target.addr.to_string(), target.port);
         self.strands.insert(seat, Strand::new(link));
-        let port = self.watching.remove(&seat).unwrap_or(target.port);
-        self.watch(port);
     }
 
-    fn shuttle(&mut self, seat: Seat) {
+    fn shuttle(&mut self, seat: Seat, warren: &Warren) {
         let Some(strand) = self.strands.get_mut(&seat) else {
             return;
         };
         let socket = self.sockets.get_mut::<tcp::Socket>(seat);
+        if let Some(verdict) = strand.link.verdict() {
+            strand.faulted = matches!(verdict, Verdict::Faulted(_));
+            (warren.told)(&format!("verdict {verdict:?}"));
+            match strand.faulted {
+                true => self.served.faulted += 1,
+                false => self.served.answered += 1,
+            }
+        }
         upward(socket, strand);
         downward(socket, strand);
-        let Some(verdict) = strand.link.verdict() else {
-            return;
-        };
-        self.served.trails.push(format!("  verdict {verdict:?}"));
-        match verdict {
-            Verdict::Faulted(_) => self.served.faulted += 1,
-            _ => self.served.answered += 1,
-        }
     }
 }

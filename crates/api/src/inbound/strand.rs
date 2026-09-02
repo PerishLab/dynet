@@ -5,6 +5,7 @@ pub struct Strand {
     pub link: Link,
     pub pending: Vec<u8>,
     pub hushed: bool,
+    pub faulted: bool,
 }
 
 impl Strand {
@@ -13,6 +14,7 @@ impl Strand {
             link,
             pending: Vec::new(),
             hushed: false,
+            faulted: false,
         }
     }
 }
@@ -32,15 +34,19 @@ pub fn upward(socket: &mut tcp::Socket, strand: &mut Strand) {
     }
 }
 
+fn finish(socket: &mut tcp::Socket, faulted: bool) {
+    match faulted {
+        true => socket.abort(),
+        false => socket.close(),
+    }
+}
+
 pub fn downward(socket: &mut tcp::Socket, strand: &mut Strand) {
     if strand.pending.is_empty() {
         match strand.link.take() {
             Taken::Body(body) => strand.pending = body,
             Taken::Empty => return,
-            Taken::Spent => {
-                socket.close();
-                return;
-            }
+            Taken::Spent => return finish(socket, strand.faulted),
         }
     }
     if !socket.can_send() {
