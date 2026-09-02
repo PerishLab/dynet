@@ -2,6 +2,9 @@ use dynet_core::Error;
 use std::net::Ipv4Addr;
 
 const ADDRESS: u16 = 1;
+const MARK: u16 = 0x5151;
+const ROUNDS: usize = 3;
+const BRIEF: std::time::Duration = std::time::Duration::from_secs(3);
 pub const QUAD: u16 = 28;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,13 +148,25 @@ pub fn ask(name: &str, mark: u16) -> Result<Vec<u8>, Error> {
     Ok(framed)
 }
 
-pub fn locate(name: &str, upstream: &str) -> Result<Ipv4Addr, Error> {
+pub fn locate(name: &str, upstream: &str) -> Result<Answer, Error> {
+    let mut spoken = Error::new(format!("{name} was never asked"));
+    for round in 0..ROUNDS {
+        let mark = MARK.wrapping_add(u16::try_from(round).unwrap_or_default());
+        match attempt(name, upstream, mark) {
+            Ok(answer) => return Ok(answer),
+            Err(error) => spoken = error,
+        }
+    }
+    Err(spoken)
+}
+
+fn attempt(name: &str, upstream: &str, mark: u16) -> Result<Answer, Error> {
     let socket = std::net::UdpSocket::bind(("0.0.0.0", 0))
         .map_err(|error| Error::new(format!("cannot open a resolving socket: {error}")))?;
     socket
-        .set_read_timeout(Some(std::time::Duration::from_secs(8)))
+        .set_read_timeout(Some(BRIEF))
         .map_err(|error| Error::new(format!("cannot bound a lookup: {error}")))?;
-    let framed = ask(name, 0x5151)?;
+    let framed = ask(name, mark)?;
     socket
         .send_to(&framed[2..], (upstream, 53))
         .map_err(|error| Error::new(format!("cannot ask about {name}: {error}")))?;
@@ -161,7 +176,7 @@ pub fn locate(name: &str, upstream: &str) -> Result<Ipv4Addr, Error> {
         .map_err(|error| Error::new(format!("no answer about {name}: {error}")))?;
     read(&room[..size])?
         .first()
-        .map(|answer| answer.address)
+        .copied()
         .ok_or_else(|| Error::new(format!("{name} resolved to no address")))
 }
 
