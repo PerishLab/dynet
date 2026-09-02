@@ -147,3 +147,36 @@ fn contested() {
         "the latest answer still decides, because the connection carries no name"
     );
 }
+
+#[test]
+fn released() {
+    let mut router = Router::new(table());
+    let early: IpAddr = "203.0.113.11".parse().expect("answer");
+    let late: IpAddr = "203.0.113.12".parse().expect("answer");
+    let now = Instant::now();
+    let decision = Decision::new(name("hongkong"), Ground::Named);
+    router.issued(
+        &domain("brief.example.com"),
+        &[early],
+        &decision,
+        now + Duration::from_secs(1),
+    );
+    router.issued(
+        &domain("long.example.com"),
+        &[late],
+        &decision,
+        now + Duration::from_secs(600),
+    );
+
+    let gone = router.forget(now + Duration::from_secs(2));
+    assert_eq!(gone, vec![early], "an expired answer must name its address");
+    assert!(
+        router.forget(now + Duration::from_secs(2)).is_empty(),
+        "a second sweep must find nothing left to release"
+    );
+    assert_eq!(
+        router.reached(late, now + Duration::from_secs(2)).ground(),
+        Ground::Named,
+        "an answer still alive must survive the sweep"
+    );
+}

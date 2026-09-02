@@ -1,4 +1,5 @@
 use super::pump::{Pools, Warren};
+use super::store::{Key, Recall};
 use crate::host::Route;
 use crate::outbound::{Roster, Tunnel};
 use crate::resolver::{self, Answer, Packet, QUAD};
@@ -9,6 +10,7 @@ use std::time::{Duration, Instant};
 const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
 const CUSHION: u64 = 120;
+const MARK: u16 = 0x7a7a;
 
 struct Call {
     asked: Vec<u8>,
@@ -68,17 +70,37 @@ impl Post<'_> {
         }
         let domain = Domain::new(&query.name)?;
         let decision = self.decide(&domain)?;
+        let key = Key {
+            name: query.name.clone(),
+            cluster: decision.cluster().clone(),
+        };
+        let remembered = match decision.ground() {
+            Ground::Default => Recall::Absent,
+            _ => self.warren.store.recall(&key),
+        };
+        if let Recall::Known {
+            reply,
+            aged,
+            refresh,
+        } = remembered
+        {
+            let mark = u16::from_be_bytes([call.asked[0], call.asked[1]]);
+            self.speak(&resolver::renew(&reply, mark, aged)?, call)?;
+            return self.after(&key, &domain, &decision, refresh);
+        }
         if decision.ground() == Ground::Default {
             let plain = asking.relay(self.warren.upstream)?;
             self.speak(&plain, call)?;
             return Ok(format!("{} left to the upstream", query.name));
         }
-        let (label, framed) = self.carry(&call.asked, decision.cluster())?;
+        let asking = Packet::new(&call.asked).frame()?;
+        let (label, framed) = self.carry(&asking, decision.cluster())?;
         let reply = framed
             .get(2..)
             .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
-        let found = resolver::read(&framed)?;
+        let found = resolver::read(reply)?;
         let told = self.keep(&domain, &found, &decision)?;
+        self.remember(&key, reply, &found);
         self.speak(reply, call)?;
         Ok(format!(
             "{} through {label} to cluster {} on ground {:?} gave {told}",
@@ -86,6 +108,50 @@ impl Post<'_> {
             decision.cluster().get(),
             decision.ground()
         ))
+    }
+
+    fn after(
+        &self,
+        key: &Key,
+        domain: &Domain,
+        decision: &Decision,
+        refresh: bool,
+    ) -> Result<String, Error> {
+        if !refresh {
+            return Ok(format!("{} from memory", key.name));
+        }
+        match self.again(key, domain, decision) {
+            Ok(()) => Ok(format!("{} from memory, refreshed", key.name)),
+            Err(error) => {
+                let spent = self.warren.store.missed(key);
+                Ok(format!(
+                    "{} from memory, refresh {spent} failed: {error}",
+                    key.name
+                ))
+            }
+        }
+    }
+
+    fn again(&self, key: &Key, domain: &Domain, decision: &Decision) -> Result<(), Error> {
+        let asking = resolver::ask(&key.name, MARK)?;
+        let (_, framed) = self.carry(&asking, decision.cluster())?;
+        let reply = framed
+            .get(2..)
+            .ok_or_else(|| Error::new("the refreshed answer carried no body"))?;
+        let found = resolver::read(reply)?;
+        self.keep(domain, &found, decision)?;
+        self.remember(key, reply, &found);
+        Ok(())
+    }
+
+    fn remember(&self, key: &Key, reply: &[u8], found: &[Answer]) {
+        let life = found.iter().map(|item| u64::from(item.life)).min();
+        let Some(life) = life else {
+            return;
+        };
+        self.warren
+            .store
+            .keep(key.clone(), reply.to_vec(), Duration::from_secs(life));
     }
 
     fn speak(&self, body: &[u8], call: &Call) -> Result<(), Error> {
@@ -112,7 +178,7 @@ impl Post<'_> {
         Ok(addresses.len())
     }
 
-    fn carry(&self, asked: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
+    fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
         let pool = self
             .pools
             .get(wanted)
@@ -128,7 +194,7 @@ impl Post<'_> {
             self.warren.upstream,
         )?;
         let mut tunnel = Tunnel::open(&endpoint, self.warren.upstream, 53)?;
-        tunnel.send(&Packet::new(asked).frame()?)?;
+        tunnel.send(framed)?;
         Ok((label.get().to_string(), gather(&mut tunnel)?))
     }
 }

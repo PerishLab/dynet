@@ -96,6 +96,33 @@ impl<'a> Packet<'a> {
     }
 }
 
+pub fn renew(body: &[u8], mark: u16, aged: u32) -> Result<Vec<u8>, Error> {
+    let mut fresh = body.to_vec();
+    if fresh.len() < 12 {
+        return Err(Error::new("a remembered answer lost its header"));
+    }
+    fresh[..2].copy_from_slice(&mark.to_be_bytes());
+    let count = usize::from(u16::from_be_bytes([fresh[6], fresh[7]]));
+    let mut cursor = skip(&fresh, 12)? + 4;
+    for _ in 0..count {
+        cursor = skip(&fresh, cursor)?;
+        if cursor + 10 > fresh.len() {
+            break;
+        }
+        let held = u32::from_be_bytes([
+            fresh[cursor + 4],
+            fresh[cursor + 5],
+            fresh[cursor + 6],
+            fresh[cursor + 7],
+        ]);
+        let left = held.saturating_sub(aged).max(1);
+        fresh[cursor + 4..cursor + 8].copy_from_slice(&left.to_be_bytes());
+        let size = usize::from(u16::from_be_bytes([fresh[cursor + 8], fresh[cursor + 9]]));
+        cursor += 10 + size;
+    }
+    Ok(fresh)
+}
+
 fn ragged() -> Error {
     Error::new("a question ran past the query")
 }
@@ -140,11 +167,10 @@ pub fn locate(name: &str, upstream: &str) -> Result<Ipv4Addr, Error> {
         .ok_or_else(|| Error::new(format!("{name} resolved to no address")))
 }
 
-pub fn read(answer: &[u8]) -> Result<Vec<Answer>, Error> {
-    if answer.len() < 14 {
+pub fn read(body: &[u8]) -> Result<Vec<Answer>, Error> {
+    if body.len() < 12 {
         return Err(Error::new("the answer is too short to carry a header"));
     }
-    let body = &answer[2..];
     let count = usize::from(u16::from_be_bytes([body[6], body[7]]));
     let mut cursor = 12;
     cursor = skip(body, cursor)? + 4;

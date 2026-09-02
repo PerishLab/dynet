@@ -41,6 +41,12 @@ impl Route {
         attempt("ip", &["route", "add", &route, "dev", name, "table", name])
     }
 
+    pub fn release(instance: &Instance, address: &str) -> bool {
+        let name = instance.get();
+        let route = format!("{address}/32");
+        attempt("ip", &["route", "del", &route, "dev", name, "table", name])
+    }
+
     pub fn destroy(instance: &Instance) -> Result<bool, Error> {
         let name = instance.get();
         let priority = instance.priority().to_string();

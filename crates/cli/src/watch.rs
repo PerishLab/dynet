@@ -53,6 +53,7 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         port: errand.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(),
+        store: &inbound::Store::new(),
         told: &told,
     };
     let served = inbound::serve(&warren, std::time::Duration::from_secs(errand.seconds))?;

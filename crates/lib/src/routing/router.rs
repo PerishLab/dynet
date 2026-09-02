@@ -43,6 +43,10 @@ impl Router {
         }
     }
 
+    pub fn forget(&mut self, now: Instant) -> Vec<IpAddr> {
+        self.ledger.sweep(now)
+    }
+
     pub fn reached(&self, address: IpAddr, now: Instant) -> Decision {
         match self.ledger.lookup(address, now) {
             Some(issue) => issue.decision().clone(),

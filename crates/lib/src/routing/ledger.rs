@@ -63,8 +63,15 @@ impl Ledger {
         self.issued.get(&address).filter(|issue| issue.expiry > now)
     }
 
-    pub fn sweep(&mut self, now: Instant) {
+    pub fn sweep(&mut self, now: Instant) -> Vec<IpAddr> {
+        let gone: Vec<IpAddr> = self
+            .issued
+            .iter()
+            .filter(|(_, issue)| issue.expiry <= now)
+            .map(|(address, _)| *address)
+            .collect();
         self.issued.retain(|_, issue| issue.expiry > now);
+        gone
     }
 
     pub fn empty(&self) -> bool {

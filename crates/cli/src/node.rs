@@ -72,7 +72,7 @@ pub fn lookup(
             }
         }
     }
-    resolver::read(&answer)
+    resolver::read(answer.get(2..).unwrap_or_default())
 }
 
 pub fn board(

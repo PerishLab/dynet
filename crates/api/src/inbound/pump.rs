@@ -1,4 +1,5 @@
 use super::link::Link;
+use super::store::Store;
 use super::strand::{Strand, downward, upward};
 use super::warden;
 use crate::outbound::{Book, Roster};
@@ -19,6 +20,7 @@ const HALF: Duration = Duration::from_secs(600);
 const FLOOR: f64 = 0.05;
 const REST: Duration = Duration::from_millis(5);
 const DEPTH: usize = 8;
+const SWEEP: Duration = Duration::from_secs(30);
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
 
@@ -31,6 +33,7 @@ pub struct Warren<'a> {
     pub port: u16,
     pub upstream: &'a str,
     pub book: &'a Book,
+    pub store: &'a Store,
     pub told: &'a (dyn Fn(&str) + Sync),
 }
 
@@ -56,6 +59,7 @@ struct Loom<'a> {
     watching: HashMap<Seat, u16>,
     strands: HashMap<Seat, Strand>,
     pools: &'a Pools,
+    swept: Duration,
     served: Served,
 }
 
@@ -78,6 +82,7 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
             watching: HashMap::new(),
             strands: HashMap::new(),
             pools: &pools,
+            swept: Duration::ZERO,
             served: Served::default(),
         };
         loom.run(warren, &mut weft);
@@ -128,6 +133,7 @@ impl Loom<'_> {
                 .poll(beat(weft.started), weft.device, &mut self.sockets);
             self.weave(warren);
             self.reap();
+            self.sweep(warren, weft.started.elapsed());
             let _ = wait(weft.device.as_raw_fd(), Some(REST.into()));
         }
     }
@@ -149,6 +155,24 @@ impl Loom<'_> {
             .filter(|(_, held)| **held == port)
             .filter(|(seat, _)| self.sockets.get::<tcp::Socket>(**seat).is_listening())
             .count()
+    }
+
+    fn sweep(&mut self, warren: &Warren, since: Duration) {
+        if since < self.swept + SWEEP {
+            return;
+        }
+        self.swept = since;
+        let Ok(mut router) = warren.router.lock() else {
+            return;
+        };
+        let gone = router.forget(Instant::now());
+        drop(router);
+        for address in &gone {
+            crate::host::Route::release(warren.instance, &address.to_string());
+        }
+        if !gone.is_empty() {
+            (warren.told)(&format!("released {} expired routes", gone.len()));
+        }
     }
 
     fn reap(&mut self) {

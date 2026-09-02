@@ -1,6 +1,8 @@
 use super::{attempt, run};
 use dynet_core::{Error, Instance};
 
+const ROOM: &str = "16384";
+
 pub struct Link;
 
 impl Link {
@@ -19,7 +21,7 @@ impl Link {
     pub fn create(instance: &Instance) -> Result<(), Error> {
         let name = instance.get();
         run("ip", &["tuntap", "add", "dev", name, "mode", "tun"])?;
-        run("ip", &["link", "set", name, "mtu", "1420"])?;
+        run("ip", &["link", "set", name, "mtu", ROOM])?;
         run("ip", &["link", "set", name, "up"])?;
         Ok(())
     }
