@@ -14,4 +14,5 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 dynet-api.workspace = true
+dynet-core.workspace = true
 plumb.workspace = true

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod catalog;
+pub mod host;
 pub mod subscription;
 
 pub use catalog::{Catalog, Declined, Reason};
