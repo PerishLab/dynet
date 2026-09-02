@@ -220,9 +220,12 @@ impl Loom<'_> {
         let decision = router.reached(target.addr.into(), Instant::now());
         drop(router);
         self.watching.remove(&seat);
-        match self.pools.get(decision.cluster()) {
-            None => self.refuse(seat, warren, &decision),
+        let begun = match self.pools.get(decision.cluster()) {
+            None => false,
             Some(pool) => self.begin(seat, warren, pool),
+        };
+        if !begun {
+            self.refuse(seat, warren, &decision);
         }
         if decision.ground() == Ground::Named {
             self.served.named += 1;
@@ -231,33 +234,34 @@ impl Loom<'_> {
 
     fn refuse(&mut self, seat: Seat, warren: &Warren, decision: &dynet_core::Decision) {
         (warren.told)(&format!(
-            "closed: cluster {} carries no pool here",
+            "closed: cluster {} could not take it",
             decision.cluster().get()
         ));
         self.served.refused += 1;
         self.sockets.get_mut::<tcp::Socket>(seat).abort();
     }
 
-    fn begin(&mut self, seat: Seat, warren: &Warren, pool: &Mutex<Selector>) {
+    fn begin(&mut self, seat: Seat, warren: &Warren, pool: &Mutex<Selector>) -> bool {
         let Some(label) = pool
             .lock()
             .ok()
             .and_then(|mut held| held.choose(Instant::now()))
         else {
-            return;
+            return false;
         };
         let posted = Roster::new(warren.entries).posted(&label, warren.book, warren.upstream);
         let Ok(endpoint) = posted else {
-            return;
+            return false;
         };
         let socket = self.sockets.get_mut::<tcp::Socket>(seat);
         let Some(target) = socket.local_endpoint() else {
-            return;
+            return false;
         };
         (warren.told)(&format!("{target} through {}", label.get()));
         self.served.accepted += 1;
         let link = Link::open(endpoint, target.addr.to_string(), target.port);
         self.strands.insert(seat, Strand::new(link));
+        true
     }
 
     fn shuttle(&mut self, seat: Seat, warren: &Warren) {

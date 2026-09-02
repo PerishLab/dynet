@@ -10,7 +10,7 @@ use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, Key, Nonce};
 use dynet_core::{Error, Fault};
 use md5::{Digest as Legacy, Md5};
-use std::net::{IpAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SALT: &[u8] = b"c48619fe-8f02-49e0-b9e9-edf763e17e21";
@@ -42,6 +42,18 @@ impl Endpoint {
         })
     }
 
+    fn seat(&self) -> Result<SocketAddr, Error> {
+        let named = format!("{}:{}", self.host, self.port);
+        if let Ok(seat) = named.parse() {
+            return Ok(seat);
+        }
+        named
+            .to_socket_addrs()
+            .map_err(|error| Error::new(format!("cannot place the node: {error}")))?
+            .next()
+            .ok_or_else(|| Error::new(format!("{} names no address", self.host)))
+    }
+
     fn command(&self) -> [u8; 16] {
         let mut hasher = Md5::new();
         hasher.update(self.identity);
@@ -58,7 +70,8 @@ impl Tunnel {
     }
 
     pub fn dial(endpoint: &Endpoint) -> Result<Self, Error> {
-        let stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port))
+        let seat = endpoint.seat()?;
+        let stream = TcpStream::connect_timeout(&seat, BRIEF)
             .map_err(|error| Error::new(format!("cannot reach the node: {error}")))?;
         stream
             .set_read_timeout(Some(BRIEF))
