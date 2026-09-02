@@ -17,54 +17,83 @@ pub struct Query {
     pub span: usize,
 }
 
-pub fn asked(packet: &[u8]) -> Result<Query, Error> {
-    if packet.len() < 17 {
-        return Err(Error::new("a query is too short to carry a question"));
-    }
-    if u16::from_be_bytes([packet[4], packet[5]]) != 1 {
-        return Err(Error::new("a query must carry exactly one question"));
-    }
-    let mut labels = Vec::new();
-    let mut cursor = 12;
-    loop {
-        let size = usize::from(*packet.get(cursor).ok_or_else(ragged)?);
-        if size & 0xc0 == 0xc0 {
-            return Err(Error::new("a question must not be compressed"));
-        }
-        cursor += 1;
-        if size == 0 {
-            break;
-        }
-        let label = packet.get(cursor..cursor + size).ok_or_else(ragged)?;
-        labels.push(String::from_utf8_lossy(label).into_owned());
-        cursor += size;
-    }
-    let kind = packet.get(cursor..cursor + 2).ok_or_else(ragged)?;
-    Ok(Query {
-        name: labels.join("."),
-        kind: u16::from_be_bytes([kind[0], kind[1]]),
-        span: cursor + 4,
-    })
+pub struct Packet<'a> {
+    body: &'a [u8],
 }
 
-pub fn barren(packet: &[u8], query: &Query) -> Vec<u8> {
-    let mut answer = packet[..query.span.min(packet.len())].to_vec();
-    if answer.len() < 12 {
-        return answer;
+impl<'a> Packet<'a> {
+    pub fn new(body: &'a [u8]) -> Self {
+        Self { body }
     }
-    answer[2] = 0x81;
-    answer[3] = 0x80;
-    answer[6..12].fill(0);
-    answer[4] = 0;
-    answer[5] = 1;
-    answer
-}
 
-pub fn frame(packet: &[u8]) -> Result<Vec<u8>, Error> {
-    let length = u16::try_from(packet.len()).map_err(|_| Error::new("the query is too long"))?;
-    let mut framed = length.to_be_bytes().to_vec();
-    framed.extend_from_slice(packet);
-    Ok(framed)
+    pub fn asked(&self) -> Result<Query, Error> {
+        let packet = self.body;
+        if packet.len() < 17 {
+            return Err(Error::new("a query is too short to carry a question"));
+        }
+        if u16::from_be_bytes([packet[4], packet[5]]) != 1 {
+            return Err(Error::new("a query must carry exactly one question"));
+        }
+        let mut labels = Vec::new();
+        let mut cursor = 12;
+        loop {
+            let size = usize::from(*packet.get(cursor).ok_or_else(ragged)?);
+            if size & 0xc0 == 0xc0 {
+                return Err(Error::new("a question must not be compressed"));
+            }
+            cursor += 1;
+            if size == 0 {
+                break;
+            }
+            let label = packet.get(cursor..cursor + size).ok_or_else(ragged)?;
+            labels.push(String::from_utf8_lossy(label).into_owned());
+            cursor += size;
+        }
+        let kind = packet.get(cursor..cursor + 2).ok_or_else(ragged)?;
+        Ok(Query {
+            name: labels.join("."),
+            kind: u16::from_be_bytes([kind[0], kind[1]]),
+            span: cursor + 4,
+        })
+    }
+
+    pub fn barren(&self, query: &Query) -> Vec<u8> {
+        let packet = self.body;
+        let mut answer = packet[..query.span.min(packet.len())].to_vec();
+        if answer.len() < 12 {
+            return answer;
+        }
+        answer[2] = 0x81;
+        answer[3] = 0x80;
+        answer[6..12].fill(0);
+        answer[4] = 0;
+        answer[5] = 1;
+        answer
+    }
+
+    pub fn frame(&self) -> Result<Vec<u8>, Error> {
+        let length =
+            u16::try_from(self.body.len()).map_err(|_| Error::new("the query is too long"))?;
+        let mut framed = length.to_be_bytes().to_vec();
+        framed.extend_from_slice(self.body);
+        Ok(framed)
+    }
+
+    pub fn relay(&self, upstream: &str) -> Result<Vec<u8>, Error> {
+        let socket = std::net::UdpSocket::bind(("0.0.0.0", 0))
+            .map_err(|error| Error::new(format!("cannot open a relaying socket: {error}")))?;
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(8)))
+            .map_err(|error| Error::new(format!("cannot bound a relay: {error}")))?;
+        socket
+            .send_to(self.body, (upstream, 53))
+            .map_err(|error| Error::new(format!("cannot pass a question upstream: {error}")))?;
+        let mut room = [0u8; 1500];
+        let size = socket
+            .recv(&mut room)
+            .map_err(|error| Error::new(format!("the upstream said nothing: {error}")))?;
+        Ok(room[..size].to_vec())
+    }
 }
 
 fn ragged() -> Error {

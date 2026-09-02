@@ -1,8 +1,8 @@
 use super::pump::Warren;
 use crate::host::Route;
 use crate::outbound::{Roster, Tunnel};
-use crate::resolver::{self, Answer, QUAD};
-use dynet_core::{Decision, Domain, Error, Selector};
+use crate::resolver::{self, Answer, Packet, QUAD};
+use dynet_core::{Decision, Domain, Error, Ground, Selector};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -67,9 +67,10 @@ impl Post<'_> {
     }
 
     fn settle(&self, call: &Call) -> Result<String, Error> {
-        let query = resolver::asked(&call.asked)?;
+        let asking = Packet::new(&call.asked);
+        let query = asking.asked()?;
         if query.kind == QUAD {
-            self.speak(&resolver::barren(&call.asked, &query), call)?;
+            self.speak(&asking.barren(&query), call)?;
             return Ok(format!(
                 "{} asked for a sixth address, answered none",
                 query.name
@@ -77,6 +78,11 @@ impl Post<'_> {
         }
         let domain = Domain::new(&query.name)?;
         let decision = self.decide(&domain)?;
+        if decision.ground() == Ground::Default {
+            let plain = asking.relay(self.warren.upstream)?;
+            self.speak(&plain, call)?;
+            return Ok(format!("{} left to the upstream", query.name));
+        }
         let (label, framed) = self.carry(&call.asked)?;
         let reply = framed
             .get(2..)
@@ -129,7 +135,7 @@ impl Post<'_> {
             self.warren.upstream,
         )?;
         let mut tunnel = Tunnel::open(&endpoint, self.warren.upstream, 53)?;
-        tunnel.send(&resolver::frame(asked)?)?;
+        tunnel.send(&Packet::new(asked).frame()?)?;
         Ok((label.get().to_string(), gather(&mut tunnel)?))
     }
 }

@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use dynet_api::host;
 mod node;
+mod watch;
 
 use dynet_api::outbound::PROBE;
 use node::Aim;
@@ -78,6 +79,8 @@ enum Command {
         upstream: String,
         #[arg(long)]
         name: String,
+        #[arg(long, default_value = "")]
+        holds: String,
         #[arg(long, default_value = "30")]
         seconds: u64,
     },
@@ -143,19 +146,20 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Forward {
             subscription,
             cluster,
-            claim,
+            claim: _,
             ports,
             upstream,
             name,
+            holds,
             seconds,
-        } => node::forward(
+        } => watch::forward(
             &instance,
-            &node::Errand {
+            &watch::Errand {
                 subscription,
                 cluster,
-                claim,
                 ports,
                 upstream,
+                holds,
                 port: config.port,
                 seconds,
                 name,
