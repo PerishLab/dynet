@@ -14,6 +14,7 @@ pub struct Issue {
 #[derive(Debug, Default)]
 pub struct Ledger {
     issued: HashMap<IpAddr, Issue>,
+    contested: usize,
 }
 
 impl Issue {
@@ -36,7 +37,18 @@ impl Ledger {
     }
 
     pub fn record(&mut self, address: IpAddr, issue: Issue) {
+        let crossed = self
+            .issued
+            .get(&address)
+            .is_some_and(|held| held.decision().cluster() != issue.decision.cluster());
+        if crossed {
+            self.contested += 1;
+        }
         self.issued.insert(address, issue);
+    }
+
+    pub fn contested(&self) -> usize {
+        self.contested
     }
 
     pub fn issue(domain: Domain, decision: Decision, expiry: Instant) -> Issue {

@@ -118,3 +118,32 @@ fn expires() {
     );
     assert_eq!(stale.cluster().get(), "default");
 }
+
+#[test]
+fn contested() {
+    let mut router = Router::new(table());
+    let answer: IpAddr = "203.0.113.7".parse().expect("answer");
+    let now = Instant::now();
+    let later = now + Duration::from_secs(300);
+    let sibling = Decision::new(name("hongkong"), Ground::Named);
+    router.issued(&domain("one.example.com"), &[answer], &sibling, later);
+    router.issued(&domain("two.example.com"), &[answer], &sibling, later);
+    assert_eq!(
+        router.ledger().contested(),
+        0,
+        "two names of one cluster sharing an address settle the same way twice"
+    );
+
+    let stranger = Decision::new(name("default"), Ground::Named);
+    router.issued(&domain("three.example.com"), &[answer], &stranger, later);
+    assert_eq!(
+        router.ledger().contested(),
+        1,
+        "a shared address whose names want different clusters must be counted"
+    );
+    assert_eq!(
+        router.reached(answer, now).cluster().get(),
+        "default",
+        "the latest answer still decides, because the connection carries no name"
+    );
+}
