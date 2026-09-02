@@ -1,14 +1,15 @@
+use super::blame;
 use super::chunk::Chunk;
 use super::kdf;
+use super::raw::{checksum, parse, random};
 use aes::Aes128;
 use aes::cipher::BlockEncrypt;
 use aes::cipher::KeyInit as Block;
 use aes::cipher::generic_array::GenericArray;
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, Key, Nonce};
-use dynet_core::Error;
+use dynet_core::{Error, Fault};
 use md5::{Digest as Legacy, Md5};
-use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,6 +31,7 @@ pub struct Tunnel {
     reply: [u8; 16],
     seed: [u8; 16],
     verify: u8,
+    fault: Option<Fault>,
 }
 
 impl Endpoint {
@@ -51,16 +53,28 @@ impl Endpoint {
 
 impl Tunnel {
     pub fn open(endpoint: &Endpoint, host: &str, port: u16) -> Result<Self, Error> {
+        let mut tunnel = Self::dial(endpoint)?;
+        tunnel.board(endpoint, host, port)?;
+        Ok(tunnel)
+    }
+
+    pub fn dial(endpoint: &Endpoint) -> Result<Self, Error> {
         let stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port))
             .map_err(|error| Error::new(format!("cannot reach the node: {error}")))?;
         stream
             .set_read_timeout(Some(Duration::from_secs(20)))
             .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(20))))
             .map_err(|error| Error::new(format!("cannot bound the node session: {error}")))?;
-        let mut tunnel = Self::dress(stream)?;
-        let header = tunnel.header(host, port);
-        tunnel.greet(endpoint, &header)?;
-        Ok(tunnel)
+        Self::dress(stream)
+    }
+
+    pub fn board(&mut self, endpoint: &Endpoint, host: &str, port: u16) -> Result<(), Error> {
+        let header = self.header(host, port);
+        self.greet(endpoint, &header)
+    }
+
+    pub fn fault(&self) -> Option<Fault> {
+        self.fault
     }
 
     fn dress(stream: TcpStream) -> Result<Self, Error> {
@@ -76,6 +90,7 @@ impl Tunnel {
             reply: key,
             seed,
             verify: secret[32],
+            fault: None,
         })
     }
 
@@ -129,18 +144,26 @@ impl Tunnel {
     }
 
     fn accept(&mut self) -> Result<(), Error> {
+        let outcome = self.settle();
+        if outcome.is_err() && self.fault.is_none() {
+            self.fault = Some(Fault::Handshake);
+        }
+        outcome
+    }
+
+    fn settle(&mut self) -> Result<(), Error> {
         let key = shorten(&kdf::digest(&self.reply));
         let seed = shorten(&kdf::digest(&self.seed));
         let length = unseal(
             &kdf::shorten(&key, &[b"AEAD Resp Header Len Key"]),
             &kdf::derive(&seed, &[b"AEAD Resp Header Len IV"]),
-            &read(&mut self.stream, 18)?,
+            &self.read(18)?,
         )?;
         let size = usize::from(u16::from_be_bytes([length[0], length[1]]));
         let header = unseal(
             &kdf::shorten(&key, &[b"AEAD Resp Header Key"]),
             &kdf::derive(&seed, &[b"AEAD Resp Header IV"]),
-            &read(&mut self.stream, size + 16)?,
+            &self.read(size + 16)?,
         )?;
         if header.first() != Some(&self.verify) {
             return Err(Error::new(
@@ -150,20 +173,25 @@ impl Tunnel {
         self.inbound = Some(Chunk::new(&key, seed));
         Ok(())
     }
+
+    fn read(&mut self, size: usize) -> Result<Vec<u8>, Error> {
+        let mut buffer = vec![0u8; size];
+        let stream = &mut self.stream;
+        let outcome = stream.read_exact(&mut buffer);
+        if let Err(error) = outcome {
+            self.fault = Some(blame::ending(error.kind()));
+            return Err(Error::new(format!(
+                "the node closed before answering: {error}"
+            )));
+        }
+        Ok(buffer)
+    }
 }
 
 fn shorten(value: &[u8; 32]) -> [u8; 16] {
     let mut short = [0u8; 16];
     short.copy_from_slice(&value[..16]);
     short
-}
-
-fn read(stream: &mut TcpStream, size: usize) -> Result<Vec<u8>, Error> {
-    let mut buffer = vec![0u8; size];
-    stream
-        .read_exact(&mut buffer)
-        .map_err(|error| Error::new(format!("the node closed before answering: {error}")))?;
-    Ok(buffer)
 }
 
 fn unseal(key: &[u8; 16], seed: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, Error> {
@@ -227,42 +255,4 @@ fn seal(key: &[u8; 16], seed: &[u8; 32], auth: &[u8; 16], body: &[u8]) -> Result
             },
         )
         .map_err(|_| Error::new("cannot seal the request header"))
-}
-
-fn checksum(value: &[u8]) -> [u8; 4] {
-    let mut state = 0xffff_ffffu32;
-    for byte in value {
-        state ^= u32::from(*byte);
-        for _ in 0..8 {
-            let carry = state & 1;
-            state >>= 1;
-            if carry != 0 {
-                state ^= 0xedb8_8320;
-            }
-        }
-    }
-    (!state).to_be_bytes()
-}
-
-fn random(size: usize) -> Result<Vec<u8>, Error> {
-    let mut buffer = vec![0u8; size];
-    File::open("/dev/urandom")
-        .and_then(|mut source| source.read_exact(&mut buffer))
-        .map_err(|error| Error::new(format!("cannot draw randomness: {error}")))?;
-    Ok(buffer)
-}
-
-fn parse(uuid: &str) -> Result<[u8; 16], Error> {
-    let digits: String = uuid.chars().filter(|item| *item != '-').collect();
-    if digits.len() != 32 {
-        return Err(Error::new("a node identity must carry sixteen bytes"));
-    }
-    let mut identity = [0u8; 16];
-    for (slot, pair) in identity.iter_mut().zip(digits.as_bytes().chunks(2)) {
-        let text =
-            std::str::from_utf8(pair).map_err(|_| Error::new("a node identity is not text"))?;
-        *slot = u8::from_str_radix(text, 16)
-            .map_err(|_| Error::new("a node identity is not hexadecimal"))?;
-    }
-    Ok(identity)
 }
