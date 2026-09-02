@@ -1,3 +1,4 @@
+use super::clock::lasting;
 use super::pump::{Pools, Warren};
 use super::store::{Key, Recall};
 use crate::host::Route;
@@ -34,7 +35,7 @@ pub fn attend(warren: &Warren, pools: &Pools, span: Duration) -> Result<(), Erro
     };
     let started = Instant::now();
     std::thread::scope(|scope| {
-        while started.elapsed() < span {
+        while lasting(started, span) {
             let mut room = [0u8; ROOM];
             let Ok((size, peer)) = socket.recv_from(&mut room) else {
                 continue;

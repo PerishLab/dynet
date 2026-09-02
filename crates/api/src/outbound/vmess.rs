@@ -14,6 +14,8 @@ use std::net::{IpAddr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SALT: &[u8] = b"c48619fe-8f02-49e0-b9e9-edf763e17e21";
+const BRIEF: Duration = Duration::from_secs(8);
+const PATIENT: Duration = Duration::from_secs(20);
 const SECURITY: u8 = 0x03;
 const OPTION: u8 = 0x01;
 
@@ -59,8 +61,8 @@ impl Tunnel {
         let stream = TcpStream::connect((endpoint.host.as_str(), endpoint.port))
             .map_err(|error| Error::new(format!("cannot reach the node: {error}")))?;
         stream
-            .set_read_timeout(Some(Duration::from_secs(20)))
-            .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(20))))
+            .set_read_timeout(Some(BRIEF))
+            .and_then(|()| stream.set_write_timeout(Some(PATIENT)))
             .map_err(|error| Error::new(format!("cannot bound the node session: {error}")))?;
         Self::dress(stream)
     }

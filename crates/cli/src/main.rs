@@ -80,6 +80,10 @@ enum Command {
         #[arg(long, default_value = "1.1.1.1")]
         upstream: String,
         #[arg(long)]
+        under: Option<String>,
+        #[arg(long)]
+        unit: bool,
+        #[arg(long)]
         name: String,
         #[arg(long, default_value = "")]
         holds: String,
@@ -149,9 +153,11 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             subscription,
             clusters,
             cluster,
-            claim: _,
+            claim,
             ports,
             upstream,
+            under,
+            unit,
             name,
             holds,
             seconds,
@@ -163,6 +169,9 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
                 cluster,
                 ports,
                 upstream,
+                claim,
+                under,
+                unit,
                 holds,
                 port: config.port,
                 seconds,

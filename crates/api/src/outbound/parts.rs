@@ -6,6 +6,9 @@ use aes_gcm::{Aes128Gcm, Key, Nonce};
 use dynet_core::{Error, Fault};
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::time::Duration;
+
+const PATIENT: Duration = Duration::from_secs(20);
 
 pub struct Egress {
     stream: TcpStream,
@@ -97,6 +100,7 @@ impl Ingress {
             ));
         }
         self.inbound = Some(Chunk::new(&key, seed));
+        let _ = self.stream.set_read_timeout(Some(PATIENT));
         Ok(())
     }
 

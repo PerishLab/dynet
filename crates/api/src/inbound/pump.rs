@@ -1,3 +1,4 @@
+use super::clock::{beat, lasting, raise};
 use super::link::Link;
 use super::store::Store;
 use super::strand::{Strand, downward, upward};
@@ -5,11 +6,10 @@ use super::warden;
 use crate::outbound::{Book, Roster};
 use crate::subscription::Entry;
 use dynet_core::{Cluster, Error, Ground, Instance, Name, Policy, Router, Selector, Verdict};
-use smoltcp::iface::{Config, Interface, SocketHandle as Seat, SocketSet};
+use smoltcp::iface::{Interface, SocketHandle as Seat, SocketSet};
 use smoltcp::phy::{Medium, TunTapInterface, wait};
 use smoltcp::socket::tcp;
-use smoltcp::time::Instant as Beat;
-use smoltcp::wire::{HardwareAddress, IpCidr, IpListenEndpoint, Ipv4Address};
+use smoltcp::wire::IpListenEndpoint;
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
 use std::sync::Mutex;
@@ -115,27 +115,9 @@ fn stand(warren: &Warren, pools: &Pools, span: Duration) {
     (warren.told)(&format!("the resolver refused to start: {error}"));
 }
 
-fn beat(started: Instant) -> Beat {
-    Beat::from_micros(i64::try_from(started.elapsed().as_micros()).unwrap_or_default())
-}
-
-fn raise(device: &mut TunTapInterface, started: Instant) -> Interface {
-    let config = Config::new(HardwareAddress::Ip);
-    let mut iface = Interface::new(config, device, beat(started));
-    iface.set_any_ip(true);
-    iface.update_ip_addrs(|addresses| {
-        let own = IpCidr::new(Ipv4Address::new(198, 51, 100, 1).into(), 24);
-        let _ = addresses.push(own);
-    });
-    let _ = iface
-        .routes_mut()
-        .add_default_ipv4_route(Ipv4Address::new(198, 51, 100, 2));
-    iface
-}
-
 impl Loom<'_> {
     fn run(&mut self, warren: &Warren, weft: &mut Weft) {
-        while weft.started.elapsed() < weft.span {
+        while lasting(weft.started, weft.span) {
             self.replenish(warren.ports);
             weft.iface
                 .poll(beat(weft.started), weft.device, &mut self.sockets);

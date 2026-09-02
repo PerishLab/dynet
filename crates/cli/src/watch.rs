@@ -9,6 +9,9 @@ pub struct Errand {
     pub cluster: String,
     pub ports: String,
     pub upstream: String,
+    pub claim: String,
+    pub under: Option<String>,
+    pub unit: bool,
     pub holds: String,
     pub port: u16,
     pub seconds: u64,
@@ -16,6 +19,10 @@ pub struct Errand {
 }
 
 pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> {
+    if errand.unit {
+        print!("{}", unit(instance, errand));
+        return Ok(ExitCode::SUCCESS);
+    }
     let text = std::fs::read_to_string(&errand.subscription).map_err(|error| {
         Error::new(format!(
             "cannot read {}: {error}",
@@ -108,4 +115,46 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
         true => ExitCode::SUCCESS,
         false => ExitCode::from(1),
     }
+}
+
+pub fn unit(instance: &Instance, errand: &Errand) -> String {
+    let name = instance.get();
+    let under = match &errand.under {
+        Some(owner) => format!(" --under {owner}"),
+        None => String::new(),
+    };
+    let run = format!(
+        "/usr/local/bin/dynet --instance {name} forward --subscription {} --clusters {} --cluster {} --claim {} --ports {} --upstream {} --name {} --seconds 0",
+        errand.subscription.display(),
+        errand.clusters.display(),
+        errand.cluster,
+        errand.claim,
+        errand.ports,
+        errand.upstream,
+        errand.name,
+    );
+    [
+        "[Unit]".to_string(),
+        format!("Description=Dynet on {name}"),
+        "Wants=network-online.target".to_string(),
+        "After=network-online.target systemd-resolved.service".to_string(),
+        "StartLimitIntervalSec=0".to_string(),
+        String::new(),
+        "[Service]".to_string(),
+        "Type=simple".to_string(),
+        format!("ExecStartPre=-/usr/local/bin/dynet --instance {name} down"),
+        format!(
+            "ExecStartPre=/usr/local/bin/dynet --instance {name} up --claim {}{under}",
+            errand.claim
+        ),
+        format!("ExecStart={run}"),
+        format!("ExecStopPost=-/usr/local/bin/dynet --instance {name} down"),
+        "Restart=always".to_string(),
+        "RestartSec=5".to_string(),
+        String::new(),
+        "[Install]".to_string(),
+        "WantedBy=multi-user.target".to_string(),
+        String::new(),
+    ]
+    .join("\n")
 }
