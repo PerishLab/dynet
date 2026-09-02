@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 dynet-core.workspace = true
 aes.workspace = true
+blake3.workspace = true
 aes-gcm.workspace = true
 hmac.workspace = true
 sha2.workspace = true

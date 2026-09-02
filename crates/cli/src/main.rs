@@ -66,6 +66,14 @@ enum Command {
         #[arg(long, default_value = PROBE)]
         target: String,
     },
+    Exit {
+        #[arg(long)]
+        seat: String,
+        #[arg(long)]
+        secret: String,
+        #[arg(long, default_value = "api.ipify.org")]
+        target: String,
+    },
     Forward {
         #[arg(long)]
         subscription: PathBuf,
@@ -149,6 +157,11 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             count,
             target,
         } => node::spread(&subscription, &cluster, &Aim { count, target }),
+        Command::Exit {
+            seat,
+            secret,
+            target,
+        } => node::exit(&seat, &secret, &target),
         Command::Forward {
             subscription,
             clusters,

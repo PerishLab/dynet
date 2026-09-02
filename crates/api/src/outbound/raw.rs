@@ -17,7 +17,7 @@ pub fn checksum(value: &[u8]) -> [u8; 4] {
     (!state).to_be_bytes()
 }
 
-pub fn random(size: usize) -> Result<Vec<u8>, Error> {
+pub(super) fn random(size: usize) -> Result<Vec<u8>, Error> {
     let mut buffer = vec![0u8; size];
     File::open("/dev/urandom")
         .and_then(|mut source| source.read_exact(&mut buffer))
