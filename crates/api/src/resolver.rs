@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 const ADDRESS: u16 = 1;
 const MARK: u16 = 0x5151;
 const ROUNDS: usize = 3;
-const BRIEF: std::time::Duration = std::time::Duration::from_secs(3);
+const BRIEF: std::time::Duration = std::time::Duration::from_secs(1);
 pub const QUAD: u16 = 28;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

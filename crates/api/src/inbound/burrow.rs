@@ -1,16 +1,16 @@
 use super::link::{Link, Taken};
 use super::pump::Served;
 use super::warren::{self, Charge, Pools, Warren};
-use dynet_core::{Bearing, Fault, Ground, Name, Verdict};
+use dynet_core::{Bearing, Ground, Name, Verdict};
 use smoltcp::iface::{SocketHandle as Seat, SocketSet};
 use smoltcp::socket::udp;
 use smoltcp::wire::{IpEndpoint, IpListenEndpoint};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-const ROOM: usize = 262144;
-const DEPTH: usize = 64;
-const IDLE: Duration = Duration::from_secs(60);
+const ROOM: usize = 2097152;
+const DEPTH: usize = 1024;
+const IDLE: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Tuple {
@@ -103,9 +103,7 @@ impl<'a> Burrow<'a> {
 
     fn close(&mut self, warren: &Warren, tuple: Tuple) {
         if let Some(bolt) = self.bolts.get(&tuple).filter(|held| !held.settled) {
-            let charge = bolt.charge.clone();
             let spent = bolt.opened.elapsed().as_millis();
-            warren::observed(self.pools, &charge, Verdict::Faulted(Fault::Silent));
             (warren.told)(&format!("{} gone after {spent}ms unanswered", tuple.peer));
         }
         self.bolts.remove(&tuple);

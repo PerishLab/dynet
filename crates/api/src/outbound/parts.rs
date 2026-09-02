@@ -11,6 +11,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 const PATIENT: Duration = Duration::from_secs(20);
+const BORNE: Duration = Duration::from_secs(600);
 
 pub struct Egress {
     stream: TcpStream,
@@ -25,6 +26,7 @@ pub struct Ingress {
     seed: [u8; 16],
     verify: u8,
     fault: Option<Fault>,
+    patience: Duration,
 }
 
 impl Egress {
@@ -59,7 +61,12 @@ impl Ingress {
             seed,
             verify,
             fault: None,
+            patience: PATIENT,
         }
+    }
+
+    pub(super) fn patient(&mut self, span: Duration) {
+        self.patience = span;
     }
 
     pub fn fault(&self) -> Option<Fault> {
@@ -104,7 +111,7 @@ impl Ingress {
             ));
         }
         self.inbound = Some(Chunk::new(&key, seed));
-        let _ = self.stream.set_read_timeout(Some(PATIENT));
+        let _ = self.stream.set_read_timeout(Some(self.patience));
         Ok(())
     }
 
@@ -243,7 +250,8 @@ impl Passage {
         tunnel
             .bear(endpoint, host, port)
             .map_err(|_| Fault::Handshake)?;
-        let (egress, ingress) = tunnel.split();
+        let (egress, mut ingress) = tunnel.split();
+        ingress.patient(BORNE);
         Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
     }
 }
