@@ -159,9 +159,7 @@ pub fn locate(name: &str, upstream: &str) -> Result<Ipv4Addr, Error> {
     let size = socket
         .recv(&mut room)
         .map_err(|error| Error::new(format!("no answer about {name}: {error}")))?;
-    let mut carried = vec![0u8, 0u8];
-    carried.extend_from_slice(&room[..size]);
-    read(&carried)?
+    read(&room[..size])?
         .first()
         .map(|answer| answer.address)
         .ok_or_else(|| Error::new(format!("{name} resolved to no address")))
