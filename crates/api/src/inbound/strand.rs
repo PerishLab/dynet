@@ -1,5 +1,6 @@
 use super::link::{Link, Taken};
 use smoltcp::socket::tcp;
+use std::time::Instant;
 
 pub struct Strand {
     pub link: Link,
@@ -8,6 +9,7 @@ pub struct Strand {
     pub faulted: bool,
     pub settled: bool,
     pub spent: bool,
+    pub opened: Instant,
 }
 
 impl Strand {
@@ -19,6 +21,7 @@ impl Strand {
             faulted: false,
             settled: false,
             spent: false,
+            opened: Instant::now(),
         }
     }
 }

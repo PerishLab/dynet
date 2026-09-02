@@ -19,7 +19,7 @@ const WINDOW: usize = 65536;
 const HALF: Duration = Duration::from_secs(600);
 const FLOOR: f64 = 0.05;
 const REST: Duration = Duration::from_millis(5);
-const DEPTH: usize = 8;
+const DEPTH: usize = 32;
 const SWEEP: Duration = Duration::from_secs(30);
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
@@ -122,7 +122,7 @@ impl Loom<'_> {
             weft.iface
                 .poll(beat(weft.started), weft.device, &mut self.sockets);
             self.weave(warren);
-            self.reap();
+            self.reap(warren);
             self.sweep(warren, weft.started.elapsed());
             let _ = wait(weft.device.as_raw_fd(), Some(REST.into()));
         }
@@ -165,7 +165,7 @@ impl Loom<'_> {
         }
     }
 
-    fn reap(&mut self) {
+    fn reap(&mut self, warren: &Warren) {
         let done: Vec<Seat> = self
             .strands
             .iter()
@@ -173,6 +173,12 @@ impl Loom<'_> {
             .map(|(seat, _)| *seat)
             .collect();
         for seat in done {
+            if let Some(strand) = self.strands.get(&seat).filter(|held| !held.settled) {
+                (warren.told)(&format!(
+                    "gone after {}ms with no verdict",
+                    strand.opened.elapsed().as_millis()
+                ));
+            }
             self.strands.remove(&seat);
             self.sockets.remove(seat);
             self.served.reaped += 1;
@@ -272,7 +278,10 @@ impl Loom<'_> {
         if let Some(verdict) = strand.link.verdict() {
             strand.faulted = matches!(verdict, Verdict::Faulted(_));
             strand.settled = true;
-            (warren.told)(&format!("verdict {verdict:?}"));
+            (warren.told)(&format!(
+                "verdict {verdict:?} after {}ms",
+                strand.opened.elapsed().as_millis()
+            ));
             match strand.faulted {
                 true => self.served.faulted += 1,
                 false => self.served.answered += 1,
