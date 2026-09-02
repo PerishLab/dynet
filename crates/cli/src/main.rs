@@ -70,6 +70,8 @@ enum Command {
         #[arg(long)]
         subscription: PathBuf,
         #[arg(long)]
+        clusters: PathBuf,
+        #[arg(long)]
         cluster: String,
         #[arg(long)]
         claim: String,
@@ -145,6 +147,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         } => node::spread(&subscription, &cluster, &Aim { count, target }),
         Command::Forward {
             subscription,
+            clusters,
             cluster,
             claim: _,
             ports,
@@ -156,6 +159,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             &instance,
             &watch::Errand {
                 subscription,
+                clusters,
                 cluster,
                 ports,
                 upstream,

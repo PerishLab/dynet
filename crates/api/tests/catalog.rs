@@ -83,3 +83,54 @@ fn empty() {
     let error = subscription::read("mode: rule\n").expect_err("no proxy entry must refuse");
     assert!(error.to_string().contains("no proxy entry"), "{error}");
 }
+
+#[test]
+fn spoken() {
+    let text = concat!(
+        "proxies:\n",
+        "  - {name: one, type: vmess, server: a.example.com, port: 1, uuid: u, udp: true}\n",
+        "  - {name: two, type: vmess, server: b.example.com, port: 2, uuid: u}\n",
+        "  - {name: exit, type: vmess, server: c.example.com, port: 3, uuid: u}\n",
+    );
+    let entries = subscription::read(text).expect("entries");
+    let spoken = concat!(
+        "[[cluster]]\nname = \"near\"\nnodes = [\"one\", \"two\"]\n\n",
+        "[[cluster]]\nname = \"pinned\"\nvia = \"near\"\nnodes = [\"exit\"]\n",
+    );
+    let held = catalog::declare(spoken, &entries).expect("declaration");
+    assert_eq!(held.clusters().len(), 2);
+    let pinned = held
+        .clusters()
+        .iter()
+        .find(|item| item.name().get() == "pinned")
+        .expect("the detour");
+    assert_eq!(pinned.via().expect("via").get(), "near");
+    assert!(
+        !held
+            .clusters()
+            .iter()
+            .any(|item| item.name().get() == "near" && item.via().is_some()),
+        "an ordinary cluster names no route to itself"
+    );
+}
+
+#[test]
+fn refused() {
+    let text = "proxies:\n  - {name: one, type: vmess, server: a.example.com, port: 1, uuid: u}\n";
+    let entries = subscription::read(text).expect("entries");
+    let absent = "[[cluster]]\nname = \"near\"\nnodes = [\"missing\"]\n";
+    let error = catalog::declare(absent, &entries).expect_err("an undeclared node must refuse");
+    assert!(error.to_string().contains("does not carry"), "{error}");
+
+    let dangling = "[[cluster]]\nname = \"near\"\nvia = \"gone\"\nnodes = [\"one\"]\n";
+    let error = catalog::declare(dangling, &entries).expect_err("a dangling route must refuse");
+    assert!(error.to_string().contains("not declared"), "{error}");
+
+    let chained = concat!(
+        "[[cluster]]\nname = \"one\"\nvia = \"two\"\nnodes = [\"one\"]\n\n",
+        "[[cluster]]\nname = \"two\"\nvia = \"three\"\nnodes = [\"one\"]\n\n",
+        "[[cluster]]\nname = \"three\"\nnodes = [\"one\"]\n",
+    );
+    let error = catalog::declare(chained, &entries).expect_err("two hops must refuse");
+    assert!(error.to_string().contains("itself a detour"), "{error}");
+}

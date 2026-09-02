@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 pub struct Errand {
     pub subscription: PathBuf,
+    pub clusters: PathBuf,
     pub cluster: String,
     pub ports: String,
     pub upstream: String,
@@ -22,7 +23,13 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         ))
     })?;
     let entries = subscription::read(&text)?;
-    let held = catalog::build(&entries)?;
+    let spoken = std::fs::read_to_string(&errand.clusters).map_err(|error| {
+        Error::new(format!(
+            "cannot read {}: {error}",
+            errand.clusters.display()
+        ))
+    })?;
+    let held = catalog::declare(&spoken, &entries)?;
     let wanted = held
         .clusters()
         .iter()

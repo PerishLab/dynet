@@ -94,6 +94,14 @@ fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
     let policy = Policy::new(HALF, FLOOR)?;
     let mut pools = Pools::new();
     for cluster in warren.clusters {
+        if let Some(wanted) = cluster.via() {
+            (warren.told)(&format!(
+                "cluster {} waits: reaching it through {} needs an outbound that is not written",
+                cluster.name().get(),
+                wanted.get()
+            ));
+            continue;
+        }
         let selector = Selector::new(cluster, policy, started);
         pools.insert(cluster.name().clone(), Mutex::new(selector));
     }

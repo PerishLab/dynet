@@ -15,6 +15,7 @@ pub struct Node {
 pub struct Cluster {
     name: Name,
     nodes: Vec<Node>,
+    via: Option<Name>,
 }
 
 impl Name {
@@ -49,13 +50,27 @@ impl Node {
 
 impl Cluster {
     pub fn new(name: Name, nodes: Vec<Node>) -> Result<Self, Error> {
+        Self::routed(name, nodes, None)
+    }
+
+    pub fn routed(name: Name, nodes: Vec<Node>, via: Option<Name>) -> Result<Self, Error> {
         if nodes.is_empty() {
             return Err(Error::new(format!(
                 "cluster {} carries no node and can serve no rule",
                 name.get()
             )));
         }
-        Ok(Self { name, nodes })
+        if via.as_ref() == Some(&name) {
+            return Err(Error::new(format!(
+                "cluster {} cannot be reached through itself",
+                name.get()
+            )));
+        }
+        Ok(Self { name, nodes, via })
+    }
+
+    pub fn via(&self) -> Option<&Name> {
+        self.via.as_ref()
     }
 
     pub fn name(&self) -> &Name {

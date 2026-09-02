@@ -50,6 +50,83 @@ impl Catalog {
     }
 }
 
+pub fn declare(text: &str, entries: &[Entry]) -> Result<Catalog, Error> {
+    let held: toml::Table = text
+        .parse()
+        .map_err(|error| Error::new(format!("the declaration does not parse: {error}")))?;
+    let listed = held
+        .get("cluster")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| Error::new("a declaration must carry at least one cluster table"))?;
+    let mut clusters = Vec::new();
+    for item in listed {
+        clusters.push(shape(item, entries)?);
+    }
+    settled(&clusters)?;
+    Ok(Catalog {
+        clusters,
+        declined: Vec::new(),
+    })
+}
+
+fn shape(item: &toml::Value, entries: &[Entry]) -> Result<Cluster, Error> {
+    let name = item
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| Error::new("a declared cluster must carry a name"))?;
+    let listed = item
+        .get("nodes")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| Error::new(format!("cluster {name} declares no nodes")))?;
+    let mut nodes = Vec::new();
+    for wanted in listed {
+        nodes.push(seat(wanted, entries, name)?);
+    }
+    let via = match item.get("via").and_then(toml::Value::as_str) {
+        Some(held) => Some(Name::new(held)?),
+        None => None,
+    };
+    Cluster::routed(Name::new(name)?, nodes, via)
+}
+
+fn seat(wanted: &toml::Value, entries: &[Entry], within: &str) -> Result<Node, Error> {
+    let label = wanted
+        .as_str()
+        .ok_or_else(|| Error::new(format!("cluster {within} names a node that is not text")))?;
+    let entry = entries
+        .iter()
+        .find(|item| item.field("name") == Some(label))
+        .ok_or_else(|| {
+            Error::new(format!(
+                "cluster {within} names {label}, which the subscription does not carry"
+            ))
+        })?;
+    Ok(node(entry, Label::new(label)?))
+}
+
+fn settled(clusters: &[Cluster]) -> Result<(), Error> {
+    for cluster in clusters {
+        let Some(wanted) = cluster.via() else {
+            continue;
+        };
+        let Some(held) = clusters.iter().find(|item| item.name() == wanted) else {
+            return Err(Error::new(format!(
+                "cluster {} is reached through {}, which is not declared",
+                cluster.name().get(),
+                wanted.get()
+            )));
+        };
+        if held.via().is_some() {
+            return Err(Error::new(format!(
+                "cluster {} would be reached through {}, which is itself a detour",
+                cluster.name().get(),
+                wanted.get()
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn build(entries: &[Entry]) -> Result<Catalog, Error> {
     let mut grouped: BTreeMap<String, Vec<Node>> = BTreeMap::new();
     let mut declined = Vec::new();

@@ -18,4 +18,5 @@ aes-gcm = "0.10"
 hmac = "0.12"
 sha2 = "0.10"
 md-5 = "0.10"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
