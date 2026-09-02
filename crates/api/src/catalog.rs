@@ -3,6 +3,7 @@ use dynet_core::{Capability, Carriage, Cluster, Error, Label, Name, Node};
 use std::collections::BTreeMap;
 
 const CARRIED: &str = "vmess";
+const SPOKEN: &str = "shadow";
 const FIRST: u32 = 0x1F1E6;
 const LAST: u32 = 0x1F1FF;
 
@@ -104,9 +105,12 @@ fn worded(held: &toml::Value) -> Result<Entry, Error> {
         };
         fields.insert(name.replace("label", "name"), said);
     }
-    let carries = held.get("udp").and_then(toml::Value::as_bool) == Some(true);
-    fields.insert("udp".to_string(), carries.to_string());
-    fields.insert("type".to_string(), "shadow".to_string());
+    if held.get("udp").and_then(toml::Value::as_bool) == Some(true) {
+        return Err(Error::new(
+            "a declared node cannot claim datagrams; Dynet carries them only over the stream of a subscription protocol",
+        ));
+    }
+    fields.insert("type".to_string(), SPOKEN.to_string());
     Ok(Entry::shaped(fields))
 }
 
@@ -201,8 +205,9 @@ pub fn build(entries: &[Entry]) -> Result<Catalog, Error> {
 }
 
 fn node(entry: &Entry, label: Label) -> Node {
-    let carriage = match entry.flag("udp") {
-        true => Carriage::Native,
+    let borne = entry.field("type") == Some(CARRIED) && entry.flag("udp");
+    let carriage = match borne {
+        true => Carriage::Relay,
         false => Carriage::Absent,
     };
     Node::new(label, Capability::new(carriage))

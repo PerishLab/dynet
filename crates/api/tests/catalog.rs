@@ -64,7 +64,7 @@ fn declared() {
         .iter()
         .map(|node| node.capability().carriage())
         .collect();
-    assert_eq!(carriages, [Carriage::Native, Carriage::Absent]);
+    assert_eq!(carriages, [Carriage::Relay, Carriage::Absent]);
     assert!(
         !hongkong.datagrams(),
         "one node without the flag must disqualify the cluster"
@@ -143,7 +143,7 @@ fn voiced() {
         "[[cluster]]\nname = \"near\"\nnodes = [\"one\"]\n\n",
         "[[cluster]]\nname = \"pinned\"\nvia = \"near\"\n",
         "[[cluster.node]]\nlabel = \"far\"\nserver = \"203.0.113.9\"\n",
-        "port = 39127\nsecret = \"AAAAAAAAAAAAAAAAAAAAAA==\"\nudp = true\n",
+        "port = 39127\nsecret = \"AAAAAAAAAAAAAAAAAAAAAA==\"\n",
     );
     let held = catalog::declare(spoken, &entries).expect("declaration");
     let pinned = held
@@ -153,7 +153,10 @@ fn voiced() {
         .expect("the detour");
     assert_eq!(pinned.nodes().len(), 1, "a declared node stands alone");
     assert_eq!(pinned.nodes()[0].label().get(), "far");
-    assert!(pinned.datagrams(), "the declaration said it carries them");
+    assert!(
+        !pinned.datagrams(),
+        "an exit Dynet reaches by its stream alone carries no datagrams"
+    );
     assert_eq!(
         held.spoken().len(),
         1,
@@ -169,5 +172,56 @@ fn voiced() {
         near.nodes().len(),
         1,
         "a declared node joins only its own cluster"
+    );
+}
+
+#[test]
+fn claimed() {
+    let text = "proxies:\n  - {name: one, type: vmess, server: a.example.com, port: 1, uuid: u}\n";
+    let entries = subscription::read(text).expect("entries");
+    let spoken = concat!(
+        "[[cluster]]\nname = \"near\"\nnodes = [\"one\"]\n\n",
+        "[[cluster]]\nname = \"pinned\"\nvia = \"near\"\n",
+        "[[cluster.node]]\nlabel = \"far\"\nserver = \"203.0.113.9\"\n",
+        "port = 39127\nsecret = \"AAAAAAAAAAAAAAAAAAAAAA==\"\nudp = true\n",
+    );
+    let error = catalog::declare(spoken, &entries).expect_err("a claim must refuse");
+    assert!(
+        error.to_string().contains("cannot claim datagrams"),
+        "{error}"
+    );
+}
+
+#[test]
+fn borne() {
+    let text = concat!(
+        "proxies:\n",
+        "  - {name: one, type: vmess, server: a.example.com, port: 1, uuid: u, udp: true}\n",
+        "  - {name: two, type: ss, server: b.example.com, port: 2, cipher: c, password: p, udp: true}\n",
+    );
+    let entries = subscription::read(text).expect("entries");
+    let spoken = concat!(
+        "[[cluster]]\nname = \"near\"\nnodes = [\"one\"]\n\n",
+        "[[cluster]]\nname = \"other\"\nnodes = [\"two\"]\n",
+    );
+    let held = catalog::declare(spoken, &entries).expect("declaration");
+    let carriage = |wanted: &str| {
+        held.clusters()
+            .iter()
+            .find(|item| item.name().get() == wanted)
+            .expect("the cluster")
+            .nodes()[0]
+            .capability()
+            .carriage()
+    };
+    assert_eq!(
+        carriage("near"),
+        Carriage::Relay,
+        "a subscription protocol Dynet speaks carries datagrams over its stream"
+    );
+    assert_eq!(
+        carriage("other"),
+        Carriage::Absent,
+        "a vendor flag on a protocol Dynet does not speak claims nothing"
     );
 }

@@ -1,11 +1,10 @@
+use super::burrow::Burrow;
 use super::clock::{beat, lasting, raise};
 use super::link::Link;
-use super::store::Store;
 use super::strand::{Strand, downward, upward};
 use super::warden;
-use crate::outbound::{Book, Passage, Roster};
-use crate::subscription::Entry;
-use dynet_core::{Cluster, Error, Ground, Instance, Name, Policy, Router, Selector, Verdict};
+use super::warren::{Pools, Warren};
+use dynet_core::{Error, Ground, Name, Policy, Selector, Verdict};
 use smoltcp::iface::{Interface, SocketHandle as Seat, SocketSet};
 use smoltcp::phy::{Medium, TunTapInterface, wait};
 use smoltcp::socket::tcp;
@@ -22,46 +21,6 @@ const REST: Duration = Duration::from_millis(5);
 const DEPTH: usize = 32;
 const SWEEP: Duration = Duration::from_secs(30);
 
-pub type Pools = HashMap<Name, Mutex<Selector>>;
-
-pub struct Warren<'a> {
-    pub instance: &'a Instance,
-    pub entries: &'a [Entry],
-    pub clusters: &'a [Cluster],
-    pub router: &'a Mutex<Router>,
-    pub ports: &'a [u16],
-    pub port: u16,
-    pub upstream: &'a str,
-    pub book: &'a Book,
-    pub store: &'a Store,
-    pub told: &'a (dyn Fn(&str) + Sync),
-}
-
-impl Warren<'_> {
-    pub fn passage(&self, pools: &Pools, wanted: &Name) -> Option<(String, Passage)> {
-        let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
-        let label = chosen(pools, wanted)?;
-        let roster = Roster::new(self.entries);
-        let Some(front) = cluster.via() else {
-            let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
-            return Some((label.get().to_string(), Passage::Plain(endpoint)));
-        };
-        let leading = chosen(pools, front)?;
-        let endpoint = roster.posted(&leading, self.book, self.upstream).ok()?;
-        let exit = roster.exit(&label).ok()?;
-        let told = format!("{} through {}", label.get(), leading.get());
-        Some((told, Passage::Veiled(endpoint, exit)))
-    }
-}
-
-fn chosen(pools: &Pools, wanted: &Name) -> Option<dynet_core::Label> {
-    pools
-        .get(wanted)?
-        .lock()
-        .ok()?
-        .choose(std::time::Instant::now())
-}
-
 #[derive(Debug, Default)]
 pub struct Served {
     pub accepted: usize,
@@ -70,6 +29,17 @@ pub struct Served {
     pub named: usize,
     pub refused: usize,
     pub reaped: usize,
+}
+
+impl Served {
+    fn gather(&mut self, other: &Self) {
+        self.accepted += other.accepted;
+        self.answered += other.answered;
+        self.faulted += other.faulted;
+        self.named += other.named;
+        self.refused += other.refused;
+        self.reaped += other.reaped;
+    }
 }
 
 struct Weft<'a> {
@@ -83,6 +53,7 @@ struct Loom<'a> {
     sockets: SocketSet<'a>,
     watching: HashMap<Seat, u16>,
     strands: HashMap<Seat, Strand>,
+    burrow: Burrow<'a>,
     pools: &'a Pools,
     swept: Duration,
     served: Served,
@@ -106,12 +77,15 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
             sockets: SocketSet::new(Vec::new()),
             watching: HashMap::new(),
             strands: HashMap::new(),
+            burrow: Burrow::new(&pools),
             pools: &pools,
             swept: Duration::ZERO,
             served: Served::default(),
         };
         loom.run(warren, &mut weft);
-        loom.served
+        let mut served = loom.served;
+        served.gather(&loom.burrow.served);
+        served
     }))
 }
 
@@ -136,9 +110,13 @@ impl Loom<'_> {
     fn run(&mut self, warren: &Warren, weft: &mut Weft) {
         while lasting(weft.started, weft.span) {
             self.replenish(warren.ports);
+            self.burrow.hold(&mut self.sockets, warren.ports);
             weft.iface
                 .poll(beat(weft.started), weft.device, &mut self.sockets);
             self.weave(warren);
+            self.burrow.drain(warren, &mut self.sockets);
+            self.burrow.spill(warren, &mut self.sockets);
+            self.burrow.reap(warren);
             self.reap(warren);
             self.sweep(warren, weft.started.elapsed());
             let _ = wait(weft.device.as_raw_fd(), Some(REST.into()));

@@ -7,6 +7,7 @@ struct Errand {
     passage: Passage,
     target: String,
     port: u16,
+    bearing: bool,
     told: Sender<Verdict>,
 }
 
@@ -24,6 +25,14 @@ pub struct Link {
 
 impl Link {
     pub fn open(passage: Passage, target: String, port: u16) -> Self {
+        Self::start(passage, target, port, false)
+    }
+
+    pub fn bear(passage: Passage, target: String, port: u16) -> Self {
+        Self::start(passage, target, port, true)
+    }
+
+    fn start(passage: Passage, target: String, port: u16, bearing: bool) -> Self {
         let (upward, outgoing) = channel();
         let (incoming, downward) = channel();
         let (spoken, told) = channel();
@@ -31,6 +40,7 @@ impl Link {
             passage,
             target,
             port,
+            bearing,
             told: spoken,
         };
         thread::spawn(move || carry(errand, outgoing, incoming));
@@ -81,7 +91,10 @@ fn carry(errand: Errand, outgoing: Receiver<Vec<u8>>, incoming: Sender<Vec<u8>>)
 }
 
 fn reach(errand: &Errand) -> Result<(Speaker, Listener), Fault> {
-    errand.passage.open(&errand.target, errand.port)
+    match errand.bearing {
+        true => errand.passage.bear(&errand.target, errand.port),
+        false => errand.passage.open(&errand.target, errand.port),
+    }
 }
 
 fn push(mut egress: Speaker, outgoing: Receiver<Vec<u8>>) {

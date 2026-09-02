@@ -230,6 +230,22 @@ impl Passage {
             Self::Veiled(first, exit) => veiled(first, exit, (host, port)),
         }
     }
+
+    pub fn bearing(&self) -> bool {
+        matches!(self, Self::Plain(_))
+    }
+
+    pub fn bear(&self, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {
+        let Self::Plain(endpoint) = self else {
+            return Err(Fault::Handshake);
+        };
+        let mut tunnel = Tunnel::dial(endpoint).map_err(|_| Fault::Reach)?;
+        tunnel
+            .bear(endpoint, host, port)
+            .map_err(|_| Fault::Handshake)?;
+        let (egress, ingress) = tunnel.split();
+        Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
+    }
 }
 
 fn plain(endpoint: &Endpoint, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {

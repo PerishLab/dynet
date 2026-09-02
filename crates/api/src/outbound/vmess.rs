@@ -18,6 +18,8 @@ const BRIEF: Duration = Duration::from_secs(8);
 const PATIENT: Duration = Duration::from_secs(20);
 const SECURITY: u8 = 0x03;
 const OPTION: u8 = 0x01;
+const STREAM: u8 = 0x01;
+const DATAGRAM: u8 = 0x02;
 
 pub struct Endpoint {
     host: String,
@@ -81,7 +83,12 @@ impl Tunnel {
     }
 
     pub fn board(&mut self, endpoint: &Endpoint, host: &str, port: u16) -> Result<(), Error> {
-        let header = self.header(host, port);
+        let header = self.header(host, port, STREAM);
+        self.greet(endpoint, &header)
+    }
+
+    pub fn bear(&mut self, endpoint: &Endpoint, host: &str, port: u16) -> Result<(), Error> {
+        let header = self.header(host, port, DATAGRAM);
         self.greet(endpoint, &header)
     }
 
@@ -119,7 +126,7 @@ impl Tunnel {
         })
     }
 
-    fn header(&self, host: &str, port: u16) -> Vec<u8> {
+    fn header(&self, host: &str, port: u16, command: u8) -> Vec<u8> {
         let mut header = vec![1u8];
         header.extend_from_slice(&self.seed);
         header.extend_from_slice(&self.reply);
@@ -127,7 +134,7 @@ impl Tunnel {
         header.push(OPTION);
         header.push(SECURITY);
         header.push(0);
-        header.push(1);
+        header.push(command);
         header.extend_from_slice(&port.to_be_bytes());
         header.extend_from_slice(&addressed(host));
         let mark = kdf::fingerprint(&header);
