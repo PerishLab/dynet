@@ -18,6 +18,7 @@ const WINDOW: usize = 65536;
 const HALF: Duration = Duration::from_secs(600);
 const FLOOR: f64 = 0.05;
 const REST: Duration = Duration::from_millis(5);
+const DEPTH: usize = 8;
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
 
@@ -40,6 +41,7 @@ pub struct Served {
     pub faulted: usize,
     pub named: usize,
     pub refused: usize,
+    pub reaped: usize,
 }
 
 struct Weft<'a> {
@@ -78,9 +80,6 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
             pools: &pools,
             served: Served::default(),
         };
-        for port in warren.ports {
-            loom.watch(*port);
-        }
         loom.run(warren, &mut weft);
         loom.served
     }))
@@ -124,11 +123,51 @@ fn raise(device: &mut TunTapInterface, started: Instant) -> Interface {
 impl Loom<'_> {
     fn run(&mut self, warren: &Warren, weft: &mut Weft) {
         while weft.started.elapsed() < weft.span {
+            self.replenish(warren.ports);
             weft.iface
                 .poll(beat(weft.started), weft.device, &mut self.sockets);
             self.weave(warren);
+            self.reap();
             let _ = wait(weft.device.as_raw_fd(), Some(REST.into()));
         }
+    }
+
+    fn replenish(&mut self, ports: &[u16]) {
+        self.watching
+            .retain(|seat, _| self.sockets.get::<tcp::Socket>(*seat).state() != tcp::State::Closed);
+        for port in ports {
+            let held = self.standing(*port);
+            for _ in held..DEPTH {
+                self.watch(*port);
+            }
+        }
+    }
+
+    fn standing(&self, port: u16) -> usize {
+        self.watching
+            .iter()
+            .filter(|(_, held)| **held == port)
+            .filter(|(seat, _)| self.sockets.get::<tcp::Socket>(**seat).is_listening())
+            .count()
+    }
+
+    fn reap(&mut self) {
+        let done: Vec<Seat> = self
+            .strands
+            .iter()
+            .filter(|(seat, strand)| self.finished(**seat, strand))
+            .map(|(seat, _)| *seat)
+            .collect();
+        for seat in done {
+            self.strands.remove(&seat);
+            self.sockets.remove(seat);
+            self.served.reaped += 1;
+        }
+    }
+
+    fn finished(&self, seat: Seat, strand: &Strand) -> bool {
+        let closed = self.sockets.get::<tcp::Socket>(seat).state() == tcp::State::Closed;
+        closed && (strand.settled || strand.spent)
     }
 
     fn watch(&mut self, port: u16) {
@@ -166,8 +205,7 @@ impl Loom<'_> {
         };
         let decision = router.reached(target.addr.into(), Instant::now());
         drop(router);
-        let port = self.watching.remove(&seat).unwrap_or(target.port);
-        self.watch(port);
+        self.watching.remove(&seat);
         match self.pools.get(decision.cluster()) {
             None => self.refuse(seat, warren, &decision),
             Some(pool) => self.begin(seat, warren, pool),
@@ -215,6 +253,7 @@ impl Loom<'_> {
         let socket = self.sockets.get_mut::<tcp::Socket>(seat);
         if let Some(verdict) = strand.link.verdict() {
             strand.faulted = matches!(verdict, Verdict::Faulted(_));
+            strand.settled = true;
             (warren.told)(&format!("verdict {verdict:?}"));
             match strand.faulted {
                 true => self.served.faulted += 1,

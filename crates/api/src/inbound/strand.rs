@@ -6,6 +6,8 @@ pub struct Strand {
     pub pending: Vec<u8>,
     pub hushed: bool,
     pub faulted: bool,
+    pub settled: bool,
+    pub spent: bool,
 }
 
 impl Strand {
@@ -15,6 +17,8 @@ impl Strand {
             pending: Vec::new(),
             hushed: false,
             faulted: false,
+            settled: false,
+            spent: false,
         }
     }
 }
@@ -46,7 +50,10 @@ pub fn downward(socket: &mut tcp::Socket, strand: &mut Strand) {
         match strand.link.take() {
             Taken::Body(body) => strand.pending = body,
             Taken::Empty => return,
-            Taken::Spent => return finish(socket, strand.faulted),
+            Taken::Spent => {
+                strand.spent = true;
+                return finish(socket, strand.faulted);
+            }
         }
     }
     if !socket.can_send() {
