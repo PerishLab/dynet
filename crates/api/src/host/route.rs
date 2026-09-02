@@ -4,6 +4,7 @@ use dynet_core::{Error, Instance};
 use std::path::PathBuf;
 
 const NUMBER: &str = "178";
+const WHOLE: &str = "/0";
 
 pub struct Route;
 
@@ -22,7 +23,9 @@ impl Route {
         let name = instance.get();
         let priority = instance.priority().to_string();
         Fragment::new(Self::registry(instance), format!("{NUMBER}\t{name}\n")).write()?;
-        run("ip", &["route", "add", claim, "dev", name, "table", name])?;
+        if !claim.ends_with(WHOLE) {
+            run("ip", &["route", "add", claim, "dev", name, "table", name])?;
+        }
         run(
             "ip",
             &[
@@ -30,6 +33,12 @@ impl Route {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn hold(instance: &Instance, address: &str) -> bool {
+        let name = instance.get();
+        let route = format!("{address}/32");
+        attempt("ip", &["route", "add", &route, "dev", name, "table", name])
     }
 
     pub fn destroy(instance: &Instance) -> Result<bool, Error> {

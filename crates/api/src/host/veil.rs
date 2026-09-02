@@ -8,10 +8,14 @@ impl Veil {
         attempt("nft", &["list", "table", "inet", instance.get()])
     }
 
-    pub fn raise(instance: &Instance, port: u16) -> Result<(), Error> {
+    pub fn raise(instance: &Instance, port: u16, under: Option<&str>) -> Result<(), Error> {
         let name = instance.get();
+        let spare = match under {
+            Some(owner) => format!("    meta skuid {owner} accept\n"),
+            None => String::new(),
+        };
         let rules = format!(
-            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta l4proto {{ tcp, udp }} th dport 53 redirect to :{port}\n  }}\n}}\n"
+            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n{spare}    meta l4proto {{ tcp, udp }} th dport 53 redirect to :{port}\n  }}\n}}\n"
         );
         write(&rules)
     }

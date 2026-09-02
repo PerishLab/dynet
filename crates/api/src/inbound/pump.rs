@@ -1,7 +1,9 @@
-use super::link::{Link, Taken};
-use crate::outbound::Roster;
+use super::link::Link;
+use super::strand::{Strand, downward, upward};
+use super::warden;
+use crate::outbound::{Book, Roster};
 use crate::subscription::Entry;
-use dynet_core::{Cluster, Error, Instance, Policy, Router, Selector, Verdict};
+use dynet_core::{Cluster, Error, Ground, Instance, Policy, Router, Selector, Verdict};
 use smoltcp::iface::{Config, Interface, SocketHandle as Seat, SocketSet};
 use smoltcp::phy::{Medium, TunTapInterface, wait};
 use smoltcp::socket::tcp;
@@ -9,6 +11,7 @@ use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{HardwareAddress, IpCidr, IpListenEndpoint, Ipv4Address};
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const WINDOW: usize = 65536;
@@ -20,8 +23,11 @@ pub struct Warren<'a> {
     pub instance: &'a Instance,
     pub entries: &'a [Entry],
     pub cluster: &'a Cluster,
-    pub router: &'a Router,
+    pub router: &'a Mutex<Router>,
     pub ports: &'a [u16],
+    pub port: u16,
+    pub upstream: &'a str,
+    pub book: &'a Book,
 }
 
 #[derive(Debug, Default)]
@@ -29,20 +35,23 @@ pub struct Served {
     pub accepted: usize,
     pub answered: usize,
     pub faulted: usize,
+    pub named: usize,
     pub trails: Vec<String>,
+    pub spoken: Vec<String>,
 }
 
-struct Strand {
-    link: Link,
-    pending: Vec<u8>,
-    hushed: bool,
+struct Weft<'a> {
+    device: &'a mut TunTapInterface,
+    iface: &'a mut Interface,
+    started: Instant,
+    span: Duration,
 }
 
 struct Loom<'a> {
     sockets: SocketSet<'a>,
     watching: HashMap<Seat, u16>,
     strands: HashMap<Seat, Strand>,
-    selector: Selector,
+    selector: &'a Mutex<Selector>,
     served: Served,
 }
 
@@ -51,22 +60,44 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
         .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
     let started = Instant::now();
     let mut iface = raise(&mut device, started);
-    let mut loom = Loom {
-        sockets: SocketSet::new(Vec::new()),
-        watching: HashMap::new(),
-        strands: HashMap::new(),
-        selector: Selector::new(warren.cluster, Policy::new(HALF, FLOOR)?, started),
-        served: Served::default(),
+    let selector = Mutex::new(Selector::new(
+        warren.cluster,
+        Policy::new(HALF, FLOOR)?,
+        started,
+    ));
+    let voice = Mutex::new(Vec::new());
+    let mut served = std::thread::scope(|scope| {
+        scope.spawn(|| stand(warren, &selector, &voice, span));
+        let mut weft = Weft {
+            device: &mut device,
+            iface: &mut iface,
+            started,
+            span,
+        };
+        let mut loom = Loom {
+            sockets: SocketSet::new(Vec::new()),
+            watching: HashMap::new(),
+            strands: HashMap::new(),
+            selector: &selector,
+            served: Served::default(),
+        };
+        for port in warren.ports {
+            loom.watch(*port);
+        }
+        loom.run(warren, &mut weft);
+        loom.served
+    });
+    served.spoken = voice.into_inner().unwrap_or_default();
+    Ok(served)
+}
+
+fn stand(warren: &Warren, selector: &Mutex<Selector>, voice: &Mutex<Vec<String>>, span: Duration) {
+    let Err(error) = warden::attend(warren, selector, voice, span) else {
+        return;
     };
-    for port in warren.ports {
-        loom.watch(*port);
+    if let Ok(mut held) = voice.lock() {
+        held.push(format!("the resolver refused to start: {error}"));
     }
-    while started.elapsed() < span {
-        iface.poll(beat(started), &mut device, &mut loom.sockets);
-        loom.weave(warren);
-        let _ = wait(device.as_raw_fd(), Some(REST.into()));
-    }
-    Ok(loom.served)
 }
 
 fn beat(started: Instant) -> Beat {
@@ -88,6 +119,15 @@ fn raise(device: &mut TunTapInterface, started: Instant) -> Interface {
 }
 
 impl Loom<'_> {
+    fn run(&mut self, warren: &Warren, weft: &mut Weft) {
+        while weft.started.elapsed() < weft.span {
+            weft.iface
+                .poll(beat(weft.started), weft.device, &mut self.sockets);
+            self.weave(warren);
+            let _ = wait(weft.device.as_raw_fd(), Some(REST.into()));
+        }
+    }
+
     fn watch(&mut self, port: u16) {
         let mut socket = tcp::Socket::new(
             tcp::SocketBuffer::new(vec![0; WINDOW]),
@@ -118,13 +158,23 @@ impl Loom<'_> {
         let Some(target) = socket.local_endpoint() else {
             return;
         };
-        let Some(label) = self.selector.choose(Instant::now()) else {
+        let Some(label) = self
+            .selector
+            .lock()
+            .ok()
+            .and_then(|mut held| held.choose(Instant::now()))
+        else {
             return;
         };
-        let Ok(endpoint) = Roster::new(warren.entries).board(&label) else {
+        let posted = Roster::new(warren.entries).posted(&label, warren.book, warren.upstream);
+        let Ok(endpoint) = posted else {
             return;
         };
-        let ground = warren.router.reached(target.addr.into(), Instant::now());
+        let Ok(router) = warren.router.lock() else {
+            return;
+        };
+        let ground = router.reached(target.addr.into(), Instant::now());
+        drop(router);
         self.served.trails.push(format!(
             "{target} through {} on ground {:?} to cluster {}",
             label.get(),
@@ -132,15 +182,11 @@ impl Loom<'_> {
             ground.cluster().get()
         ));
         self.served.accepted += 1;
+        if ground.ground() == Ground::Named {
+            self.served.named += 1;
+        }
         let link = Link::open(endpoint, target.addr.to_string(), target.port);
-        self.strands.insert(
-            seat,
-            Strand {
-                link,
-                pending: Vec::new(),
-                hushed: false,
-            },
-        );
+        self.strands.insert(seat, Strand::new(link));
         let port = self.watching.remove(&seat).unwrap_or(target.port);
         self.watch(port);
     }
@@ -161,37 +207,4 @@ impl Loom<'_> {
             _ => self.served.answered += 1,
         }
     }
-}
-
-fn upward(socket: &mut tcp::Socket, strand: &mut Strand) {
-    if socket.can_recv() {
-        let taken = socket
-            .recv(|data| (data.len(), data.to_vec()))
-            .unwrap_or_default();
-        if !taken.is_empty() {
-            strand.link.offer(&taken);
-        }
-    }
-    if !socket.may_recv() && !strand.hushed {
-        strand.link.hush();
-        strand.hushed = true;
-    }
-}
-
-fn downward(socket: &mut tcp::Socket, strand: &mut Strand) {
-    if strand.pending.is_empty() {
-        match strand.link.take() {
-            Taken::Body(body) => strand.pending = body,
-            Taken::Empty => return,
-            Taken::Spent => {
-                socket.close();
-                return;
-            }
-        }
-    }
-    if !socket.can_send() {
-        return;
-    }
-    let written = socket.send_slice(&strand.pending).unwrap_or_default();
-    strand.pending.drain(..written);
 }

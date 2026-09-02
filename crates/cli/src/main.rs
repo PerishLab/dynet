@@ -34,7 +34,7 @@ enum Command {
         #[arg(long, default_value = dynet_api::host::PREFIX)]
         claim: String,
         #[arg(long)]
-        bare: bool,
+        under: Option<String>,
     },
     Down,
     Resolve {
@@ -74,6 +74,10 @@ enum Command {
         claim: String,
         #[arg(long, default_value = "80")]
         ports: String,
+        #[arg(long, default_value = "1.1.1.1")]
+        upstream: String,
+        #[arg(long)]
+        name: String,
         #[arg(long, default_value = "30")]
         seconds: u64,
     },
@@ -117,7 +121,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     let instance = Instance::new(&config.instance)?;
     match cli.command {
         Command::Doctor => doctor(&instance),
-        Command::Up { claim, bare } => raise(&instance, config.port, &claim, bare),
+        Command::Up { claim, under } => raise(&instance, config.port, &claim, under.as_deref()),
         Command::Down => lower(&instance),
         Command::Resolve {
             subscription,
@@ -141,6 +145,8 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             cluster,
             claim,
             ports,
+            upstream,
+            name,
             seconds,
         } => node::forward(
             &instance,
@@ -149,7 +155,10 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
                 cluster,
                 claim,
                 ports,
+                upstream,
+                port: config.port,
                 seconds,
+                name,
             },
         ),
     }
@@ -178,8 +187,13 @@ fn doctor(instance: &Instance) -> Result<ExitCode, Error> {
     )
 }
 
-fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<ExitCode, Error> {
-    let standing = host::establish(instance, port, claim, bare)?;
+fn raise(
+    instance: &Instance,
+    port: u16,
+    claim: &str,
+    under: Option<&str>,
+) -> Result<ExitCode, Error> {
+    let standing = host::establish(instance, port, claim, under)?;
     println!(
         "up: reclaimed={} veiled={}",
         standing.cleared.any(),

@@ -160,6 +160,32 @@ impl<'a> Roster<'a> {
         Ok(tunnel)
     }
 
+    pub fn posted(
+        &self,
+        label: &Label,
+        book: &super::Book,
+        upstream: &str,
+    ) -> Result<Endpoint, Error> {
+        let entry = self.seat(label)?;
+        let host = entry
+            .field("server")
+            .ok_or_else(|| Error::new("no server"))?;
+        Endpoint::new(
+            book.find(host, upstream)?,
+            port(entry)?,
+            entry
+                .field("uuid")
+                .ok_or_else(|| Error::new("no identity"))?,
+        )
+    }
+
+    fn seat(&self, label: &Label) -> Result<&Entry, Error> {
+        self.entries
+            .iter()
+            .find(|item| item.field("name") == Some(label.get()))
+            .ok_or_else(|| Error::new(format!("no node named {}", label.get())))
+    }
+
     pub fn board(&self, label: &Label) -> Result<Endpoint, Error> {
         let entry = self
             .entries
@@ -180,6 +206,13 @@ impl<'a> Roster<'a> {
                 .ok_or_else(|| Error::new("no identity"))?,
         )
     }
+}
+
+fn port(entry: &Entry) -> Result<u16, Error> {
+    entry
+        .field("port")
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| Error::new("a node carries no usable port"))
 }
 
 fn pick(selector: &Mutex<Selector>) -> Option<Label> {

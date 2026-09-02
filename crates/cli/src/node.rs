@@ -59,7 +59,7 @@ pub fn lookup(
     entries: &[subscription::Entry],
     label: &str,
     name: &str,
-) -> Result<Vec<std::net::Ipv4Addr>, Error> {
+) -> Result<Vec<resolver::Answer>, Error> {
     let mut tunnel = board(entries, label, "1.1.1.1", 53)?;
     tunnel.send(&resolver::ask(name, 0x2b2b)?)?;
     let mut answer = Vec::new();
@@ -202,7 +202,10 @@ pub struct Errand {
     pub cluster: String,
     pub claim: String,
     pub ports: String,
+    pub upstream: String,
+    pub port: u16,
     pub seconds: u64,
+    pub name: String,
 }
 
 pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> {
@@ -220,19 +223,25 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         .find(|item| item.name().get() == errand.cluster)
         .ok_or_else(|| Error::new(format!("no cluster named {}", errand.cluster)))?;
     let table = Table::new(
-        vec![Rule::new(
-            Subject::Holds(span(&errand.claim)?),
-            wanted.name().clone(),
-        )],
+        vec![
+            Rule::new(
+                Subject::Suffix(Domain::new(&errand.name)?),
+                wanted.name().clone(),
+            ),
+            Rule::new(Subject::Holds(span(&errand.claim)?), wanted.name().clone()),
+        ],
         Name::new("direct")?,
     );
-    let router = Router::new(table);
+    let router = std::sync::Mutex::new(Router::new(table));
     let warren = inbound::Warren {
         instance,
         entries: &entries,
         cluster: wanted,
         router: &router,
         ports: &listed(&errand.ports)?,
+        port: errand.port,
+        upstream: &errand.upstream,
+        book: &dynet_api::outbound::Book::new(),
     };
     let served = inbound::serve(&warren, std::time::Duration::from_secs(errand.seconds))?;
     Ok(recount(&served))
@@ -263,14 +272,17 @@ pub fn span(claim: &str) -> Result<Range, Error> {
 }
 
 pub fn recount(served: &inbound::Served) -> ExitCode {
+    for spoken in &served.spoken {
+        println!("  asked {spoken}");
+    }
     for trail in &served.trails {
         println!("  {trail}");
     }
     println!(
-        "accepted {}, answered {}, faulted {}",
-        served.accepted, served.answered, served.faulted
+        "accepted {}, answered {}, faulted {}, named {}",
+        served.accepted, served.answered, served.faulted, served.named
     );
-    match served.accepted > 0 && served.faulted == 0 && served.answered > 0 {
+    match served.accepted > 0 && served.faulted == 0 && served.named > 0 {
         true => ExitCode::SUCCESS,
         false => ExitCode::from(1),
     }
