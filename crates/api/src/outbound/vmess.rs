@@ -1,6 +1,6 @@
-use super::blame;
 use super::chunk::Chunk;
 use super::kdf;
+use super::parts::{Egress, Ingress};
 use super::raw::{checksum, parse, random};
 use aes::Aes128;
 use aes::cipher::BlockEncrypt;
@@ -10,8 +10,7 @@ use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, Key, Nonce};
 use dynet_core::{Error, Fault};
 use md5::{Digest as Legacy, Md5};
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{IpAddr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SALT: &[u8] = b"c48619fe-8f02-49e0-b9e9-edf763e17e21";
@@ -25,13 +24,11 @@ pub struct Endpoint {
 }
 
 pub struct Tunnel {
-    stream: TcpStream,
-    outbound: Chunk,
-    inbound: Option<Chunk>,
+    egress: Egress,
+    ingress: Ingress,
     reply: [u8; 16],
     seed: [u8; 16],
     verify: u8,
-    fault: Option<Fault>,
 }
 
 impl Endpoint {
@@ -73,8 +70,20 @@ impl Tunnel {
         self.greet(endpoint, &header)
     }
 
+    pub fn split(self) -> (Egress, Ingress) {
+        (self.egress, self.ingress)
+    }
+
+    pub fn send(&mut self, body: &[u8]) -> Result<(), Error> {
+        self.egress.send(body)
+    }
+
+    pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
+        self.ingress.receive()
+    }
+
     pub fn fault(&self) -> Option<Fault> {
-        self.fault
+        self.ingress.fault()
     }
 
     fn dress(stream: TcpStream) -> Result<Self, Error> {
@@ -83,14 +92,15 @@ impl Tunnel {
         let mut seed = [0u8; 16];
         key.copy_from_slice(&secret[..16]);
         seed.copy_from_slice(&secret[16..32]);
+        let listening = stream
+            .try_clone()
+            .map_err(|error| Error::new(format!("cannot halve the node session: {error}")))?;
         Ok(Self {
-            stream,
-            outbound: Chunk::new(&key, seed),
-            inbound: None,
+            egress: Egress::new(stream, Chunk::new(&key, seed)),
+            ingress: Ingress::new(listening, key, seed, secret[32]),
             reply: key,
             seed,
             verify: secret[32],
-            fault: None,
         })
     }
 
@@ -104,9 +114,7 @@ impl Tunnel {
         header.push(0);
         header.push(1);
         header.extend_from_slice(&port.to_be_bytes());
-        header.push(2);
-        header.push(u8::try_from(host.len()).unwrap_or_default());
-        header.extend_from_slice(host.as_bytes());
+        header.extend_from_slice(&addressed(host));
         let mark = kdf::fingerprint(&header);
         header.extend_from_slice(&mark);
         header
@@ -124,87 +132,20 @@ impl Tunnel {
         request.extend_from_slice(&guard(&command, &auth, &nonce, header.len())?);
         request.extend_from_slice(&nonce);
         request.extend_from_slice(&conceal(&command, &auth, &nonce, header)?);
-        self.stream
-            .write_all(&request)
-            .map_err(|error| Error::new(format!("cannot greet the node: {error}")))
-    }
-
-    pub fn send(&mut self, body: &[u8]) -> Result<(), Error> {
-        self.outbound.send(&mut self.stream, body)
-    }
-
-    pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        if self.inbound.is_none() {
-            self.accept()?;
-        }
-        let Some(inbound) = self.inbound.as_mut() else {
-            return Ok(None);
-        };
-        inbound.receive(&mut self.stream)
-    }
-
-    fn accept(&mut self) -> Result<(), Error> {
-        let outcome = self.settle();
-        if outcome.is_err() && self.fault.is_none() {
-            self.fault = Some(Fault::Handshake);
-        }
-        outcome
-    }
-
-    fn settle(&mut self) -> Result<(), Error> {
-        let key = shorten(&kdf::digest(&self.reply));
-        let seed = shorten(&kdf::digest(&self.seed));
-        let length = unseal(
-            &kdf::shorten(&key, &[b"AEAD Resp Header Len Key"]),
-            &kdf::derive(&seed, &[b"AEAD Resp Header Len IV"]),
-            &self.read(18)?,
-        )?;
-        let size = usize::from(u16::from_be_bytes([length[0], length[1]]));
-        let header = unseal(
-            &kdf::shorten(&key, &[b"AEAD Resp Header Key"]),
-            &kdf::derive(&seed, &[b"AEAD Resp Header IV"]),
-            &self.read(size + 16)?,
-        )?;
-        if header.first() != Some(&self.verify) {
-            return Err(Error::new(
-                "the node answered with the wrong session marker; the handshake was not accepted",
-            ));
-        }
-        self.inbound = Some(Chunk::new(&key, seed));
-        Ok(())
-    }
-
-    fn read(&mut self, size: usize) -> Result<Vec<u8>, Error> {
-        let mut buffer = vec![0u8; size];
-        let stream = &mut self.stream;
-        let outcome = stream.read_exact(&mut buffer);
-        if let Err(error) = outcome {
-            self.fault = Some(blame::ending(error.kind()));
-            return Err(Error::new(format!(
-                "the node closed before answering: {error}"
-            )));
-        }
-        Ok(buffer)
+        self.egress.greet(&request)
     }
 }
 
-fn shorten(value: &[u8; 32]) -> [u8; 16] {
-    let mut short = [0u8; 16];
-    short.copy_from_slice(&value[..16]);
-    short
-}
-
-fn unseal(key: &[u8; 16], seed: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, Error> {
-    let cipher = Aes128Gcm::new(Key::<Aes128Gcm>::from_slice(key));
-    cipher
-        .decrypt(
-            Nonce::from_slice(&seed[..12]),
-            Payload {
-                msg: sealed,
-                aad: b"",
-            },
-        )
-        .map_err(|_| Error::new("the node's answer did not open"))
+fn addressed(host: &str) -> Vec<u8> {
+    match host.parse() {
+        Ok(IpAddr::V4(plain)) => [vec![1u8], plain.octets().to_vec()].concat(),
+        Ok(IpAddr::V6(plain)) => [vec![3u8], plain.octets().to_vec()].concat(),
+        Err(_) => [
+            vec![2u8, u8::try_from(host.len()).unwrap_or_default()],
+            host.as_bytes().to_vec(),
+        ]
+        .concat(),
+    }
 }
 
 fn identify(command: &[u8; 16], stamp: u64) -> Result<[u8; 16], Error> {

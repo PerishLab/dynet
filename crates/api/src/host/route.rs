@@ -1,5 +1,5 @@
 use super::fragment::Fragment;
-use super::{PREFIX, attempt, run};
+use super::{attempt, run};
 use dynet_core::{Error, Instance};
 use std::path::PathBuf;
 
@@ -18,15 +18,15 @@ impl Route {
             .is_ok_and(|text| !text.trim().is_empty())
     }
 
-    pub fn create(instance: &Instance) -> Result<(), Error> {
+    pub fn create(instance: &Instance, claim: &str) -> Result<(), Error> {
         let name = instance.get();
         let priority = instance.priority().to_string();
         Fragment::new(Self::registry(instance), format!("{NUMBER}\t{name}\n")).write()?;
-        run("ip", &["route", "add", PREFIX, "dev", name, "table", name])?;
+        run("ip", &["route", "add", claim, "dev", name, "table", name])?;
         run(
             "ip",
             &[
-                "rule", "add", "to", PREFIX, "priority", &priority, "table", name,
+                "rule", "add", "to", claim, "priority", &priority, "table", name,
             ],
         )?;
         Ok(())

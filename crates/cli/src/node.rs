@@ -1,6 +1,6 @@
-use dynet_api::outbound::{Endpoint, Tunnel};
-use dynet_api::{catalog, resolver, spread as pool, subscription};
-use dynet_core::{Domain, Error, Name, Router, Rule, Subject, Table};
+use dynet_api::outbound::{Endpoint, PROBE, Roster, Run, Tunnel};
+use dynet_api::{catalog, inbound, resolver, subscription};
+use dynet_core::{Domain, Error, Instance, Name, Range, Router, Rule, Subject, Table};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -138,7 +138,12 @@ pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<String, Err
         .to_string())
 }
 
-pub fn spread(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Error> {
+pub struct Aim {
+    pub count: usize,
+    pub target: String,
+}
+
+pub fn spread(path: &PathBuf, cluster: &str, aim: &Aim) -> Result<ExitCode, Error> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
     let entries = subscription::read(&text)?;
@@ -148,11 +153,11 @@ pub fn spread(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, E
         .iter()
         .find(|item| item.name().get() == cluster)
         .ok_or_else(|| Error::new(format!("no cluster named {cluster}")))?;
-    let name = Domain::new(pool::PROBE)?;
+    let name = Domain::new(PROBE)?;
     let router = Router::new(table(&name, wanted.name())?);
-    let roster = pool::Roster::new(&entries);
-    let run = roster.drive(wanted, &router.asked(&name), count)?;
-    Ok(report(&run, count))
+    let roster = Roster::aimed(&entries, &aim.target);
+    let run = roster.drive(wanted, &router.asked(&name), aim.count)?;
+    Ok(report(&run, aim.count))
 }
 
 pub fn table(name: &Domain, cluster: &Name) -> Result<Table, Error> {
@@ -160,11 +165,11 @@ pub fn table(name: &Domain, cluster: &Name) -> Result<Table, Error> {
     Ok(Table::new(vec![rule], Name::new("direct")?))
 }
 
-pub fn report(run: &pool::Run, count: usize) -> ExitCode {
+pub fn report(run: &Run, count: usize) -> ExitCode {
     let decision = run.decision();
     println!(
         "rule {} -> cluster {} on ground {:?}",
-        pool::PROBE,
+        PROBE,
         decision.cluster().get(),
         decision.ground()
     );
@@ -187,6 +192,85 @@ pub fn report(run: &pool::Run, count: usize) -> ExitCode {
         egresses.len()
     );
     match run.answered() == count && egresses.len() > 1 {
+        true => ExitCode::SUCCESS,
+        false => ExitCode::from(1),
+    }
+}
+
+pub struct Errand {
+    pub subscription: PathBuf,
+    pub cluster: String,
+    pub claim: String,
+    pub ports: String,
+    pub seconds: u64,
+}
+
+pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> {
+    let text = std::fs::read_to_string(&errand.subscription).map_err(|error| {
+        Error::new(format!(
+            "cannot read {}: {error}",
+            errand.subscription.display()
+        ))
+    })?;
+    let entries = subscription::read(&text)?;
+    let held = catalog::build(&entries)?;
+    let wanted = held
+        .clusters()
+        .iter()
+        .find(|item| item.name().get() == errand.cluster)
+        .ok_or_else(|| Error::new(format!("no cluster named {}", errand.cluster)))?;
+    let table = Table::new(
+        vec![Rule::new(
+            Subject::Holds(span(&errand.claim)?),
+            wanted.name().clone(),
+        )],
+        Name::new("direct")?,
+    );
+    let router = Router::new(table);
+    let warren = inbound::Warren {
+        instance,
+        entries: &entries,
+        cluster: wanted,
+        router: &router,
+        ports: &listed(&errand.ports)?,
+    };
+    let served = inbound::serve(&warren, std::time::Duration::from_secs(errand.seconds))?;
+    Ok(recount(&served))
+}
+
+pub fn listed(ports: &str) -> Result<Vec<u16>, Error> {
+    ports
+        .split(',')
+        .map(|item| {
+            item.trim()
+                .parse()
+                .map_err(|_| Error::new(format!("{item} is not a port")))
+        })
+        .collect()
+}
+
+pub fn span(claim: &str) -> Result<Range, Error> {
+    let (base, prefix) = claim
+        .split_once('/')
+        .ok_or_else(|| Error::new(format!("{claim} carries no prefix length")))?;
+    let base = base
+        .parse()
+        .map_err(|_| Error::new(format!("{base} is not an address")))?;
+    let prefix = prefix
+        .parse()
+        .map_err(|_| Error::new(format!("{prefix} is not a prefix length")))?;
+    Range::new(base, prefix)
+}
+
+pub fn recount(served: &inbound::Served) -> ExitCode {
+    for trail in &served.trails {
+        println!("  {trail}");
+    }
+    println!(
+        "accepted {}, answered {}, faulted {}",
+        served.accepted, served.answered, served.faulted
+    );
+    match served.accepted > 0 && served.faulted == 0 && served.answered > 0 {
         true => ExitCode::SUCCESS,
         false => ExitCode::from(1),
     }

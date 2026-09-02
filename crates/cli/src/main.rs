@@ -4,6 +4,9 @@ use clap::{Parser, Subcommand};
 use dynet_api::host;
 mod node;
 
+use dynet_api::outbound::PROBE;
+use node::Aim;
+
 use dynet_core::{Error, Instance};
 use plumb::config::Cascade;
 use std::path::PathBuf;
@@ -27,7 +30,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Doctor,
-    Up,
+    Up {
+        #[arg(long, default_value = dynet_api::host::PREFIX)]
+        claim: String,
+        #[arg(long)]
+        bare: bool,
+    },
     Down,
     Resolve {
         #[arg(long)]
@@ -54,6 +62,20 @@ enum Command {
         cluster: String,
         #[arg(long, default_value = "16")]
         count: usize,
+        #[arg(long, default_value = PROBE)]
+        target: String,
+    },
+    Forward {
+        #[arg(long)]
+        subscription: PathBuf,
+        #[arg(long)]
+        cluster: String,
+        #[arg(long)]
+        claim: String,
+        #[arg(long, default_value = "80")]
+        ports: String,
+        #[arg(long, default_value = "30")]
+        seconds: u64,
     },
 }
 
@@ -95,7 +117,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     let instance = Instance::new(&config.instance)?;
     match cli.command {
         Command::Doctor => doctor(&instance),
-        Command::Up => raise(&instance, config.port),
+        Command::Up { claim, bare } => raise(&instance, config.port, &claim, bare),
         Command::Down => lower(&instance),
         Command::Resolve {
             subscription,
@@ -112,7 +134,24 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             subscription,
             cluster,
             count,
-        } => node::spread(&subscription, &cluster, count),
+            target,
+        } => node::spread(&subscription, &cluster, &Aim { count, target }),
+        Command::Forward {
+            subscription,
+            cluster,
+            claim,
+            ports,
+            seconds,
+        } => node::forward(
+            &instance,
+            &node::Errand {
+                subscription,
+                cluster,
+                claim,
+                ports,
+                seconds,
+            },
+        ),
     }
 }
 
@@ -139,8 +178,8 @@ fn doctor(instance: &Instance) -> Result<ExitCode, Error> {
     )
 }
 
-fn raise(instance: &Instance, port: u16) -> Result<ExitCode, Error> {
-    let standing = host::establish(instance, port)?;
+fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<ExitCode, Error> {
+    let standing = host::establish(instance, port, claim, bare)?;
     println!(
         "up: reclaimed={} veiled={}",
         standing.cleared.any(),

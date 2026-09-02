@@ -2,9 +2,10 @@
 
 pub mod catalog;
 pub mod host;
+pub mod inbound;
 pub mod outbound;
 pub mod resolver;
-pub mod spread;
+
 pub mod subscription;
 
 pub use catalog::{Catalog, Declined, Reason};

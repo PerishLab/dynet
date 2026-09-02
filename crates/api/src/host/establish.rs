@@ -7,7 +7,12 @@ pub struct Standing {
     pub veiled: bool,
 }
 
-pub fn establish(instance: &Instance, port: u16) -> Result<Standing, Error> {
+pub fn establish(
+    instance: &Instance,
+    port: u16,
+    claim: &str,
+    bare: bool,
+) -> Result<Standing, Error> {
     let shape = survey()?;
     if !shape.ownable() || matches!(shape, Shape::Resolved { upstream: false }) {
         return Err(Error::new(format!(
@@ -16,20 +21,22 @@ pub fn establish(instance: &Instance, port: u16) -> Result<Standing, Error> {
         )));
     }
     let cleared = reclaim(instance)?;
-    match raise(instance, port) {
+    match raise(instance, port, claim, bare) {
         Ok(()) => Ok(Standing {
             cleared,
-            veiled: true,
+            veiled: !bare,
         }),
         Err(error) => Err(unwind(instance, error)),
     }
 }
 
-fn raise(instance: &Instance, port: u16) -> Result<(), Error> {
+fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<(), Error> {
     Link::create(instance)?;
-    Route::create(instance)?;
-    Veil::raise(instance, port)?;
-    Ok(())
+    Route::create(instance, claim)?;
+    if bare {
+        return Ok(());
+    }
+    Veil::raise(instance, port)
 }
 
 fn unwind(instance: &Instance, error: Error) -> Error {

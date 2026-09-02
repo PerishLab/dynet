@@ -1,4 +1,4 @@
-use crate::outbound::{Endpoint, Tunnel};
+use super::{Endpoint, Tunnel};
 use crate::subscription::Entry;
 use dynet_core::{Cluster, Decision, Error, Fault, Label, Policy, Selector, Verdict};
 use std::collections::BTreeSet;
@@ -82,11 +82,19 @@ impl Run {
 
 pub struct Roster<'a> {
     entries: &'a [Entry],
+    target: String,
 }
 
 impl<'a> Roster<'a> {
     pub fn new(entries: &'a [Entry]) -> Self {
-        Self { entries }
+        Self::aimed(entries, PROBE)
+    }
+
+    pub fn aimed(entries: &'a [Entry], target: &str) -> Self {
+        Self {
+            entries,
+            target: target.to_string(),
+        }
     }
 
     pub fn drive(
@@ -144,7 +152,7 @@ impl<'a> Roster<'a> {
             .map_err(|error| stumble(Fault::Reach, &error))?;
         let mut tunnel = Tunnel::dial(&endpoint).map_err(|error| stumble(Fault::Reach, &error))?;
         tunnel
-            .board(&endpoint, PROBE, 80)
+            .board(&endpoint, &self.target, 80)
             .map_err(|error| stumble(Fault::Handshake, &error))?;
         tunnel
             .send(ASK.as_bytes())
@@ -152,7 +160,7 @@ impl<'a> Roster<'a> {
         Ok(tunnel)
     }
 
-    fn board(&self, label: &Label) -> Result<Endpoint, Error> {
+    pub fn board(&self, label: &Label) -> Result<Endpoint, Error> {
         let entry = self
             .entries
             .iter()
