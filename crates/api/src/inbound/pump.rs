@@ -3,7 +3,7 @@ use super::link::Link;
 use super::store::Store;
 use super::strand::{Strand, downward, upward};
 use super::warden;
-use crate::outbound::{Book, Roster};
+use crate::outbound::{Book, Passage, Roster};
 use crate::subscription::Entry;
 use dynet_core::{Cluster, Error, Ground, Instance, Name, Policy, Router, Selector, Verdict};
 use smoltcp::iface::{Interface, SocketHandle as Seat, SocketSet};
@@ -35,6 +35,31 @@ pub struct Warren<'a> {
     pub book: &'a Book,
     pub store: &'a Store,
     pub told: &'a (dyn Fn(&str) + Sync),
+}
+
+impl Warren<'_> {
+    pub fn passage(&self, pools: &Pools, wanted: &Name) -> Option<(String, Passage)> {
+        let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
+        let label = chosen(pools, wanted)?;
+        let roster = Roster::new(self.entries);
+        let Some(front) = cluster.via() else {
+            let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
+            return Some((label.get().to_string(), Passage::Plain(endpoint)));
+        };
+        let leading = chosen(pools, front)?;
+        let endpoint = roster.posted(&leading, self.book, self.upstream).ok()?;
+        let exit = roster.exit(&label).ok()?;
+        let told = format!("{} through {}", label.get(), leading.get());
+        Some((told, Passage::Veiled(endpoint, exit)))
+    }
+}
+
+fn chosen(pools: &Pools, wanted: &Name) -> Option<dynet_core::Label> {
+    pools
+        .get(wanted)?
+        .lock()
+        .ok()?
+        .choose(std::time::Instant::now())
 }
 
 #[derive(Debug, Default)]
@@ -94,14 +119,6 @@ fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
     let policy = Policy::new(HALF, FLOOR)?;
     let mut pools = Pools::new();
     for cluster in warren.clusters {
-        if let Some(wanted) = cluster.via() {
-            (warren.told)(&format!(
-                "cluster {} waits: reaching it through {} needs an outbound that is not written",
-                cluster.name().get(),
-                wanted.get()
-            ));
-            continue;
-        }
         let selector = Selector::new(cluster, policy, started);
         pools.insert(cluster.name().clone(), Mutex::new(selector));
     }
@@ -226,11 +243,7 @@ impl Loom<'_> {
         let decision = router.reached(target.addr.into(), Instant::now());
         drop(router);
         self.watching.remove(&seat);
-        let begun = match self.pools.get(decision.cluster()) {
-            None => false,
-            Some(pool) => self.begin(seat, warren, pool),
-        };
-        if !begun {
+        if !self.begin(seat, warren, decision.cluster()) {
             self.refuse(seat, warren, &decision);
         }
         if decision.ground() == Ground::Named {
@@ -247,25 +260,17 @@ impl Loom<'_> {
         self.sockets.get_mut::<tcp::Socket>(seat).abort();
     }
 
-    fn begin(&mut self, seat: Seat, warren: &Warren, pool: &Mutex<Selector>) -> bool {
-        let Some(label) = pool
-            .lock()
-            .ok()
-            .and_then(|mut held| held.choose(Instant::now()))
-        else {
-            return false;
-        };
-        let posted = Roster::new(warren.entries).posted(&label, warren.book, warren.upstream);
-        let Ok(endpoint) = posted else {
+    fn begin(&mut self, seat: Seat, warren: &Warren, wanted: &Name) -> bool {
+        let Some((told, passage)) = warren.passage(self.pools, wanted) else {
             return false;
         };
         let socket = self.sockets.get_mut::<tcp::Socket>(seat);
         let Some(target) = socket.local_endpoint() else {
             return false;
         };
-        (warren.told)(&format!("{target} through {}", label.get()));
+        (warren.told)(&format!("{target} through {told}"));
         self.served.accepted += 1;
-        let link = Link::open(endpoint, target.addr.to_string(), target.port);
+        let link = Link::open(passage, target.addr.to_string(), target.port);
         self.strands.insert(seat, Strand::new(link));
         true
     }

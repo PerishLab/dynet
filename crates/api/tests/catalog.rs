@@ -134,3 +134,40 @@ fn refused() {
     let error = catalog::declare(chained, &entries).expect_err("two hops must refuse");
     assert!(error.to_string().contains("itself a detour"), "{error}");
 }
+
+#[test]
+fn voiced() {
+    let text = "proxies:\n  - {name: one, type: vmess, server: a.example.com, port: 1, uuid: u}\n";
+    let entries = subscription::read(text).expect("entries");
+    let spoken = concat!(
+        "[[cluster]]\nname = \"near\"\nnodes = [\"one\"]\n\n",
+        "[[cluster]]\nname = \"pinned\"\nvia = \"near\"\n",
+        "[[cluster.node]]\nlabel = \"far\"\nserver = \"203.0.113.9\"\n",
+        "port = 39127\nsecret = \"AAAAAAAAAAAAAAAAAAAAAA==\"\nudp = true\n",
+    );
+    let held = catalog::declare(spoken, &entries).expect("declaration");
+    let pinned = held
+        .clusters()
+        .iter()
+        .find(|item| item.name().get() == "pinned")
+        .expect("the detour");
+    assert_eq!(pinned.nodes().len(), 1, "a declared node stands alone");
+    assert_eq!(pinned.nodes()[0].label().get(), "far");
+    assert!(pinned.datagrams(), "the declaration said it carries them");
+    assert_eq!(
+        held.spoken().len(),
+        1,
+        "the node it declared is handed back"
+    );
+    assert_eq!(held.spoken()[0].field("server"), Some("203.0.113.9"));
+    let near = held
+        .clusters()
+        .iter()
+        .find(|item| item.name().get() == "near")
+        .expect("the first hop");
+    assert_eq!(
+        near.nodes().len(),
+        1,
+        "a declared node joins only its own cluster"
+    );
+}

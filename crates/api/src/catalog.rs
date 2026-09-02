@@ -24,6 +24,7 @@ pub struct Declined {
 pub struct Catalog {
     clusters: Vec<Cluster>,
     declined: Vec<Declined>,
+    spoken: Vec<Entry>,
 }
 
 impl Declined {
@@ -45,6 +46,10 @@ impl Catalog {
         &self.declined
     }
 
+    pub fn spoken(&self) -> &[Entry] {
+        &self.spoken
+    }
+
     pub fn nodes(&self) -> usize {
         self.clusters.iter().map(|item| item.nodes().len()).sum()
     }
@@ -59,28 +64,71 @@ pub fn declare(text: &str, entries: &[Entry]) -> Result<Catalog, Error> {
         .and_then(toml::Value::as_array)
         .ok_or_else(|| Error::new("a declaration must carry at least one cluster table"))?;
     let mut clusters = Vec::new();
+    let mut spoken = Vec::new();
     for item in listed {
-        clusters.push(shape(item, entries)?);
+        let own = voiced(item)?;
+        clusters.push(shape(item, entries, &own)?);
+        spoken.extend(own);
     }
     settled(&clusters)?;
     Ok(Catalog {
         clusters,
         declined: Vec::new(),
+        spoken,
     })
 }
 
-fn shape(item: &toml::Value, entries: &[Entry]) -> Result<Cluster, Error> {
+fn voiced(item: &toml::Value) -> Result<Vec<Entry>, Error> {
+    let Some(listed) = item.get("node").and_then(toml::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    let mut spoken = Vec::new();
+    for held in listed {
+        spoken.push(worded(held)?);
+    }
+    Ok(spoken)
+}
+
+fn worded(held: &toml::Value) -> Result<Entry, Error> {
+    let mut fields = BTreeMap::new();
+    for name in ["label", "server", "port", "secret"] {
+        let told = held
+            .get(name)
+            .ok_or_else(|| Error::new(format!("a declared node carries no {name}")))?;
+        let said = match told.as_integer() {
+            Some(number) => number.to_string(),
+            None => told
+                .as_str()
+                .ok_or_else(|| Error::new(format!("a declared {name} is not text")))?
+                .to_string(),
+        };
+        fields.insert(name.replace("label", "name"), said);
+    }
+    let carries = held.get("udp").and_then(toml::Value::as_bool) == Some(true);
+    fields.insert("udp".to_string(), carries.to_string());
+    fields.insert("type".to_string(), "shadow".to_string());
+    Ok(Entry::shaped(fields))
+}
+
+fn shape(item: &toml::Value, entries: &[Entry], own: &[Entry]) -> Result<Cluster, Error> {
     let name = item
         .get("name")
         .and_then(toml::Value::as_str)
         .ok_or_else(|| Error::new("a declared cluster must carry a name"))?;
-    let listed = item
+    let mut nodes = Vec::new();
+    for wanted in item
         .get("nodes")
         .and_then(toml::Value::as_array)
-        .ok_or_else(|| Error::new(format!("cluster {name} declares no nodes")))?;
-    let mut nodes = Vec::new();
-    for wanted in listed {
+        .unwrap_or(&Vec::new())
+    {
         nodes.push(seat(wanted, entries, name)?);
+    }
+    for held in own {
+        let label = Label::new(held.field("name").unwrap_or_default())?;
+        nodes.push(node(held, label));
+    }
+    if nodes.is_empty() {
+        return Err(Error::new(format!("cluster {name} declares no nodes")));
     }
     let via = match item.get("via").and_then(toml::Value::as_str) {
         Some(held) => Some(Name::new(held)?),
@@ -145,7 +193,11 @@ pub fn build(entries: &[Entry]) -> Result<Catalog, Error> {
     for (place, nodes) in grouped {
         clusters.push(Cluster::new(Name::new(place)?, nodes)?);
     }
-    Ok(Catalog { clusters, declined })
+    Ok(Catalog {
+        clusters,
+        declined,
+        spoken: Vec::new(),
+    })
 }
 
 fn node(entry: &Entry, label: Label) -> Node {

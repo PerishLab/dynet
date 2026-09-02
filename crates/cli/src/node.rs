@@ -1,4 +1,4 @@
-use dynet_api::outbound::Shroud;
+use dynet_api::outbound::veil;
 use dynet_api::outbound::{Endpoint, PROBE, Roster, Run, Tunnel};
 use dynet_api::{catalog, resolver, subscription};
 use dynet_core::{Domain, Error, Name, Router, Rule, Subject, Table};
@@ -213,10 +213,10 @@ pub fn exit(seat: &str, secret: &str, target: &str) -> Result<ExitCode, Error> {
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(15)))
         .map_err(|error| Error::new(format!("cannot bound the session: {error}")))?;
-    let mut shroud = Shroud::new(key)?;
+    let (mut cloak, mut shroud) = veil(key)?;
     let asking =
         format!("GET /?format=text HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n");
-    shroud.greet(&mut stream, (target, 80), asking.as_bytes())?;
+    cloak.greet(&mut stream, (target, 80), asking.as_bytes())?;
     let mut answer = Vec::new();
     while let Some(part) = shroud.receive(&mut stream)? {
         answer.extend_from_slice(&part);

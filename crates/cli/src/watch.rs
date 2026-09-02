@@ -29,7 +29,7 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
             errand.subscription.display()
         ))
     })?;
-    let entries = subscription::read(&text)?;
+    let mut entries = subscription::read(&text)?;
     let spoken = std::fs::read_to_string(&errand.clusters).map_err(|error| {
         Error::new(format!(
             "cannot read {}: {error}",
@@ -37,6 +37,7 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         ))
     })?;
     let held = catalog::declare(&spoken, &entries)?;
+    entries.extend(held.spoken().iter().cloned());
     let wanted = held
         .clusters()
         .iter()

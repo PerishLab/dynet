@@ -179,6 +179,32 @@ impl<'a> Roster<'a> {
         )
     }
 
+    pub fn exit(&self, label: &Label) -> Result<super::Exit, Error> {
+        let entry = self.seat(label)?;
+        let told = entry
+            .field("secret")
+            .ok_or_else(|| Error::new(format!("node {} carries no key", label.get())))?;
+        let drawn =
+            super::raw::unbase(told).ok_or_else(|| Error::new("a key is not base sixty four"))?;
+        let mut secret = [0u8; 16];
+        if drawn.len() != secret.len() {
+            return Err(Error::new(format!(
+                "node {} carries a key of {} bytes, not sixteen",
+                label.get(),
+                drawn.len()
+            )));
+        }
+        secret.copy_from_slice(&drawn);
+        Ok(super::Exit {
+            host: entry
+                .field("server")
+                .ok_or_else(|| Error::new("no server"))?
+                .to_string(),
+            port: port(entry)?,
+            secret,
+        })
+    }
+
     fn seat(&self, label: &Label) -> Result<&Entry, Error> {
         self.entries
             .iter()

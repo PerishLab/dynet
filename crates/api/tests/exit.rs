@@ -1,4 +1,4 @@
-use dynet_api::outbound::Shroud;
+use dynet_api::outbound::veil;
 use std::env;
 use std::io::Write;
 use std::net::TcpStream;
@@ -41,8 +41,8 @@ fn reaches() {
     stream
         .set_read_timeout(Some(Duration::from_secs(15)))
         .expect("timeout");
-    let mut shroud = Shroud::new(secret).expect("shroud");
-    shroud
+    let (mut cloak, mut shroud) = veil(secret).expect("shroud");
+    cloak
         .greet(
             &mut stream,
             ("api.ipify.org", 80),

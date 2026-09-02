@@ -1,10 +1,10 @@
-use crate::outbound::{Egress, Endpoint, Ingress, Tunnel};
+use crate::outbound::{Listener, Passage, Speaker};
 use dynet_core::{Fault, Verdict};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 struct Errand {
-    endpoint: Endpoint,
+    passage: Passage,
     target: String,
     port: u16,
     told: Sender<Verdict>,
@@ -23,12 +23,12 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn open(endpoint: Endpoint, target: String, port: u16) -> Self {
+    pub fn open(passage: Passage, target: String, port: u16) -> Self {
         let (upward, outgoing) = channel();
         let (incoming, downward) = channel();
         let (spoken, told) = channel();
         let errand = Errand {
-            endpoint,
+            passage,
             target,
             port,
             told: spoken,
@@ -80,15 +80,11 @@ fn carry(errand: Errand, outgoing: Receiver<Vec<u8>>, incoming: Sender<Vec<u8>>)
     let _ = writer.join();
 }
 
-fn reach(errand: &Errand) -> Result<(Egress, Ingress), Fault> {
-    let mut tunnel = Tunnel::dial(&errand.endpoint).map_err(|_| Fault::Reach)?;
-    tunnel
-        .board(&errand.endpoint, &errand.target, errand.port)
-        .map_err(|_| Fault::Handshake)?;
-    Ok(tunnel.split())
+fn reach(errand: &Errand) -> Result<(Speaker, Listener), Fault> {
+    errand.passage.open(&errand.target, errand.port)
 }
 
-fn push(mut egress: Egress, outgoing: Receiver<Vec<u8>>) {
+fn push(mut egress: Speaker, outgoing: Receiver<Vec<u8>>) {
     while let Ok(body) = outgoing.recv() {
         if egress.send(&body).is_err() {
             break;
@@ -97,7 +93,7 @@ fn push(mut egress: Egress, outgoing: Receiver<Vec<u8>>) {
     let _ = egress.done();
 }
 
-fn pull(mut ingress: Ingress, incoming: &Sender<Vec<u8>>) -> Verdict {
+fn pull(mut ingress: Listener, incoming: &Sender<Vec<u8>>) -> Verdict {
     let mut answered = false;
     let mut fault = Fault::Silent;
     loop {

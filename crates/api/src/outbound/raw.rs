@@ -39,3 +39,21 @@ pub fn parse(uuid: &str) -> Result<[u8; 16], Error> {
     }
     Ok(identity)
 }
+
+pub fn unbase(text: &str) -> Option<Vec<u8>> {
+    const CODE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut held = 0u32;
+    let mut bits = 0u32;
+    let mut out = Vec::new();
+    for byte in text.bytes().filter(|item| *item != b'=') {
+        let place = u32::try_from(CODE.iter().position(|item| *item == byte)?).ok()?;
+        held = (held << 6) | place;
+        bits += 6;
+        if bits < 8 {
+            continue;
+        }
+        bits -= 8;
+        out.push(u8::try_from((held >> bits) & 0xff).ok()?);
+    }
+    Some(out)
+}

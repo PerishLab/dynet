@@ -13,32 +13,40 @@ const TAG: usize = 16;
 const SKEW: u64 = 30;
 const CHAFF: usize = 512;
 
-pub struct Shroud {
-    secret: [u8; SALT],
+pub struct Cloak {
     salt: [u8; SALT],
     outward: Aes128Gcm,
     outgoing: u64,
+}
+
+pub struct Shroud {
+    secret: [u8; SALT],
+    salt: [u8; SALT],
     inward: Option<Aes128Gcm>,
     incoming: u64,
     spare: Option<Vec<u8>>,
 }
 
-impl Shroud {
-    pub fn new(secret: [u8; SALT]) -> Result<Self, Error> {
-        let drawn = random(SALT)?;
-        let mut salt = [0u8; SALT];
-        salt.copy_from_slice(&drawn);
-        Ok(Self {
-            secret,
-            salt,
-            outward: cipher(&secret, &salt),
-            outgoing: 0,
-            inward: None,
-            incoming: 0,
-            spare: None,
-        })
-    }
+pub fn veil(secret: [u8; SALT]) -> Result<(Cloak, Shroud), Error> {
+    let drawn = random(SALT)?;
+    let mut salt = [0u8; SALT];
+    salt.copy_from_slice(&drawn);
+    let cloak = Cloak {
+        salt,
+        outward: cipher(&secret, &salt),
+        outgoing: 0,
+    };
+    let shroud = Shroud {
+        secret,
+        salt,
+        inward: None,
+        incoming: 0,
+        spare: None,
+    };
+    Ok((cloak, shroud))
+}
 
+impl Cloak {
     pub fn greet(
         &mut self,
         out: &mut impl Write,
@@ -80,6 +88,22 @@ impl Shroud {
             .map_err(|error| Error::new(format!("cannot write to the exit: {error}")))
     }
 
+    fn seal(&mut self, body: &[u8]) -> Result<Vec<u8>, Error> {
+        let nonce = counted(self.outgoing);
+        self.outgoing += 1;
+        self.outward
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: body,
+                    aad: b"",
+                },
+            )
+            .map_err(|_| Error::new("cannot seal a chunk for the exit"))
+    }
+}
+
+impl Shroud {
     pub fn receive(&mut self, inp: &mut impl Read) -> Result<Option<Vec<u8>>, Error> {
         if self.inward.is_none() {
             self.accept(inp)?;
@@ -118,20 +142,6 @@ impl Shroud {
             self.spare = self.take(inp, told + TAG)?;
         }
         Ok(())
-    }
-
-    fn seal(&mut self, body: &[u8]) -> Result<Vec<u8>, Error> {
-        let nonce = counted(self.outgoing);
-        self.outgoing += 1;
-        self.outward
-            .encrypt(
-                Nonce::from_slice(&nonce),
-                Payload {
-                    msg: body,
-                    aad: b"",
-                },
-            )
-            .map_err(|_| Error::new("cannot seal a chunk for the exit"))
     }
 
     fn take(&mut self, inp: &mut impl Read, size: usize) -> Result<Option<Vec<u8>>, Error> {

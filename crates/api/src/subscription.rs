@@ -7,6 +7,10 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn shaped(fields: BTreeMap<String, String>) -> Self {
+        Self { fields }
+    }
+
     pub fn field(&self, name: &str) -> Option<&str> {
         self.fields.get(name).map(String::as_str)
     }

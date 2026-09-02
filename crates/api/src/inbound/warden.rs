@@ -2,7 +2,7 @@ use super::clock::lasting;
 use super::pump::{Pools, Warren};
 use super::store::{Key, Recall};
 use crate::host::Route;
-use crate::outbound::{Roster, Tunnel};
+use crate::outbound::Listener;
 use crate::resolver::{self, Answer, Packet, QUAD};
 use dynet_core::{Decision, Domain, Error, Ground, Name};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
@@ -180,23 +180,16 @@ impl Post<'_> {
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
-        let pool = self
-            .pools
-            .get(wanted)
-            .ok_or_else(|| Error::new(format!("cluster {} carries no pool here", wanted.get())))?;
-        let label = pool
-            .lock()
-            .map_err(|_| poisoned())?
-            .choose(Instant::now())
-            .ok_or_else(|| Error::new("the cluster offered no node"))?;
-        let endpoint = Roster::new(self.warren.entries).posted(
-            &label,
-            self.warren.book,
-            self.warren.upstream,
-        )?;
-        let mut tunnel = Tunnel::open(&endpoint, self.warren.upstream, 53)?;
-        tunnel.send(framed)?;
-        Ok((label.get().to_string(), gather(&mut tunnel)?))
+        let (told, passage) = self
+            .warren
+            .passage(self.pools, wanted)
+            .ok_or_else(|| Error::new(format!("cluster {} offered no node", wanted.get())))?;
+        let (mut speaker, mut listener) =
+            passage.open(self.warren.upstream, 53).map_err(|fault| {
+                Error::new(format!("the resolver could not reach a node: {fault:?}"))
+            })?;
+        speaker.send(framed)?;
+        Ok((told, gather(&mut listener)?))
     }
 }
 
@@ -204,9 +197,9 @@ fn poisoned() -> Error {
     Error::new("a lock was left poisoned by a dead thread")
 }
 
-fn gather(tunnel: &mut Tunnel) -> Result<Vec<u8>, Error> {
+fn gather(listener: &mut Listener) -> Result<Vec<u8>, Error> {
     let mut framed = Vec::new();
-    while let Some(part) = tunnel.receive()? {
+    while let Some(part) = listener.receive()? {
         framed.extend_from_slice(&part);
         if framed.len() >= 2 {
             let want = usize::from(u16::from_be_bytes([framed[0], framed[1]]));
