@@ -1,3 +1,9 @@
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Bearing {
+    Stream,
+    Datagram,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Carriage {
     Native,
@@ -28,5 +34,14 @@ impl Capability {
 
     pub fn datagrams(self) -> bool {
         self.carriage.datagrams()
+    }
+}
+
+impl Capability {
+    pub fn bears(self, bearing: Bearing) -> bool {
+        match bearing {
+            Bearing::Stream => true,
+            Bearing::Datagram => self.datagrams(),
+        }
     }
 }

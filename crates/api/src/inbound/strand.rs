@@ -1,9 +1,11 @@
 use super::link::{Link, Taken};
+use super::warren::Charge;
 use smoltcp::socket::tcp;
 use std::time::Instant;
 
 pub struct Strand {
     pub link: Link,
+    pub charge: Charge,
     pub pending: Vec<u8>,
     pub hushed: bool,
     pub faulted: bool,
@@ -13,9 +15,10 @@ pub struct Strand {
 }
 
 impl Strand {
-    pub fn new(link: Link) -> Self {
+    pub fn new(link: Link, charge: Charge) -> Self {
         Self {
             link,
+            charge,
             pending: Vec::new(),
             hushed: false,
             faulted: false,

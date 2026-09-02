@@ -1,12 +1,25 @@
 use super::store::Store;
 use crate::outbound::{Book, Passage, Roster};
 use crate::subscription::Entry;
-use dynet_core::{Cluster, Instance, Label, Name, Router, Selector};
+use dynet_core::{Bearing, Cluster, Instance, Label, Name, Router, Selector, Verdict};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
+
+#[derive(Clone, Debug)]
+pub struct Charge {
+    pub cluster: Name,
+    pub label: Label,
+    pub bearing: Bearing,
+}
+
+pub struct Chosen {
+    pub charge: Charge,
+    pub told: String,
+    pub passage: Passage,
+}
 
 pub struct Warren<'a> {
     pub instance: &'a Instance,
@@ -22,19 +35,38 @@ pub struct Warren<'a> {
 }
 
 impl Warren<'_> {
-    pub fn passage(&self, pools: &Pools, wanted: &Name) -> Option<(String, Passage)> {
+    pub fn passage(&self, pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
         let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
-        let label = chosen(pools, wanted)?;
+        let label = chosen(pools, wanted, bearing)?;
         let roster = Roster::new(self.entries);
         let Some(front) = cluster.via() else {
             let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
-            return Some((label.get().to_string(), Passage::Plain(endpoint)));
+            let told = label.get().to_string();
+            let charge = Charge {
+                cluster: wanted.clone(),
+                label,
+                bearing,
+            };
+            return Some(Chosen {
+                charge,
+                told,
+                passage: Passage::Plain(endpoint),
+            });
         };
-        let leading = chosen(pools, front)?;
+        let leading = chosen(pools, front, bearing)?;
         let endpoint = roster.posted(&leading, self.book, self.upstream).ok()?;
         let exit = roster.exit(&label).ok()?;
         let told = format!("{} through {}", label.get(), leading.get());
-        Some((told, Passage::Veiled(endpoint, exit)))
+        let charge = Charge {
+            cluster: front.clone(),
+            label: leading,
+            bearing,
+        };
+        Some(Chosen {
+            charge,
+            told,
+            passage: Passage::Veiled(endpoint, exit),
+        })
     }
 
     pub fn bearing(&self, wanted: &Name) -> bool {
@@ -45,6 +77,20 @@ impl Warren<'_> {
     }
 }
 
-fn chosen(pools: &Pools, wanted: &Name) -> Option<Label> {
-    pools.get(wanted)?.lock().ok()?.choose(Instant::now())
+pub fn observed(pools: &Pools, charge: &Charge, verdict: Verdict) {
+    let Some(selector) = pools.get(&charge.cluster) else {
+        return;
+    };
+    let Ok(mut held) = selector.lock() else {
+        return;
+    };
+    held.observed(&charge.label, charge.bearing, verdict, Instant::now());
+}
+
+fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
+    pools
+        .get(wanted)?
+        .lock()
+        .ok()?
+        .choose(bearing, Instant::now())
 }

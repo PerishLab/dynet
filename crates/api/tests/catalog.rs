@@ -1,5 +1,5 @@
 use dynet_api::{Reason, catalog, subscription};
-use dynet_core::Carriage;
+use dynet_core::{Bearing, Carriage};
 
 const SAMPLE: &str = "proxies:
   - {name: '\u{1F1ED}\u{1F1F0} one', type: vmess, server: a.invalid, port: 443, uuid: x, udp: true}
@@ -66,8 +66,13 @@ fn declared() {
         .collect();
     assert_eq!(carriages, [Carriage::Relay, Carriage::Absent]);
     assert!(
-        !hongkong.datagrams(),
-        "one node without the flag must disqualify the cluster"
+        hongkong.datagrams(),
+        "one bearer is enough; the node without the flag is simply never chosen for them"
+    );
+    assert_eq!(
+        hongkong.bearers(Bearing::Datagram).len(),
+        1,
+        "the node without the flag is out of the datagram pool"
     );
 }
 

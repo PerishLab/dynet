@@ -1,4 +1,5 @@
 use crate::Capability;
+use crate::capability::Bearing;
 use crate::error::Error;
 use crate::label::Label;
 
@@ -82,6 +83,13 @@ impl Cluster {
     }
 
     pub fn datagrams(&self) -> bool {
-        self.nodes.iter().all(|node| node.capability().datagrams())
+        self.nodes.iter().any(|node| node.capability().datagrams())
+    }
+
+    pub fn bearers(&self, bearing: Bearing) -> Vec<&Node> {
+        self.nodes
+            .iter()
+            .filter(|node| node.capability().bears(bearing))
+            .collect()
     }
 }

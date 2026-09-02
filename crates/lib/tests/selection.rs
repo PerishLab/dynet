@@ -1,5 +1,6 @@
 use dynet_core::{
-    Blame, Capability, Carriage, Cluster, Fault, Label, Name, Node, Policy, Selector, Verdict,
+    Bearing, Blame, Capability, Carriage, Cluster, Fault, Label, Name, Node, Policy, Selector,
+    Verdict,
 };
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -23,7 +24,7 @@ fn policy() -> Policy {
 fn tally(selector: &mut Selector, rounds: usize, now: Instant) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for _ in 0..rounds {
-        let label = selector.choose(now).expect("a node");
+        let label = selector.choose(Bearing::Stream, now).expect("a node");
         *counts.entry(label.get().to_string()).or_default() += 1;
     }
     counts
@@ -72,7 +73,7 @@ fn demotes() {
     let mut selector = Selector::new(&cluster(4), policy(), now);
     let bad = Label::new("node-0").expect("label");
     for _ in 0..6 {
-        selector.observed(&bad, Verdict::Faulted(Fault::Reach), now);
+        selector.observed(&bad, Bearing::Stream, Verdict::Faulted(Fault::Reach), now);
     }
     let counts = tally(&mut selector, 200, now);
     let share = counts.get("node-0").copied().expect("the demoted node");
@@ -88,11 +89,20 @@ fn spares() {
     let now = Instant::now();
     let mut selector = Selector::new(&cluster(2), policy(), now);
     let held = Label::new("node-0").expect("label");
-    let before = selector.weight(&held, now).expect("weight");
+    let before = selector
+        .weight(&held, Bearing::Stream, now)
+        .expect("weight");
     for _ in 0..8 {
-        selector.observed(&held, Verdict::Faulted(Fault::Refused), now);
+        selector.observed(
+            &held,
+            Bearing::Stream,
+            Verdict::Faulted(Fault::Refused),
+            now,
+        );
     }
-    let after = selector.weight(&held, now).expect("weight");
+    let after = selector
+        .weight(&held, Bearing::Stream, now)
+        .expect("weight");
     assert!(
         after >= before,
         "a destination that refuses must not cost the node that reached it"
@@ -105,11 +115,13 @@ fn recovers() {
     let mut selector = Selector::new(&cluster(2), policy(), now);
     let bad = Label::new("node-0").expect("label");
     for _ in 0..8 {
-        selector.observed(&bad, Verdict::Faulted(Fault::Silent), now);
+        selector.observed(&bad, Bearing::Stream, Verdict::Faulted(Fault::Silent), now);
     }
-    let sunk = selector.weight(&bad, now).expect("weight");
+    let sunk = selector.weight(&bad, Bearing::Stream, now).expect("weight");
     let later = now + Duration::from_secs(6000);
-    let healed = selector.weight(&bad, later).expect("weight");
+    let healed = selector
+        .weight(&bad, Bearing::Stream, later)
+        .expect("weight");
     assert!(sunk < 0.2, "eight faults must sink the standing: {sunk}");
     assert!(
         healed > 0.9,
@@ -129,4 +141,75 @@ fn refuses() {
             "floor {floor} must refuse"
         );
     }
+}
+
+fn mixed() -> Cluster {
+    let nodes = vec![
+        Node::new(
+            Label::new("bearer").expect("label"),
+            Capability::new(Carriage::Relay),
+        ),
+        Node::new(
+            Label::new("streamer").expect("label"),
+            Capability::new(Carriage::Absent),
+        ),
+    ];
+    Cluster::new(Name::new("provider").expect("name"), nodes).expect("cluster")
+}
+
+#[test]
+fn separates() {
+    let now = Instant::now();
+    let mut selector = Selector::new(&mixed(), policy(), now);
+    let borne = Label::new("bearer").expect("label");
+    for _ in 0..4 {
+        selector.observed(
+            &borne,
+            Bearing::Datagram,
+            Verdict::Faulted(Fault::Silent),
+            now,
+        );
+    }
+    let carried = selector
+        .weight(&borne, Bearing::Datagram, now)
+        .expect("a datagram weight");
+    let streamed = selector
+        .weight(&borne, Bearing::Stream, now)
+        .expect("a stream weight");
+    assert!(
+        carried < streamed,
+        "a node silent on datagrams must lose that standing alone, not its stream one"
+    );
+    assert!(
+        carried > policy().floor(),
+        "the exploration floor keeps a demoted bearer reachable"
+    );
+    assert_eq!(
+        streamed, 1.0,
+        "a node that has never failed a stream stands at full weight"
+    );
+}
+
+#[test]
+fn confines() {
+    let now = Instant::now();
+    let mut selector = Selector::new(&mixed(), policy(), now);
+    let counts = (0..40)
+        .filter_map(|_| selector.choose(Bearing::Datagram, now))
+        .filter(|label| label.get() == "streamer")
+        .count();
+    assert_eq!(
+        counts, 0,
+        "a node that carries no datagrams is never chosen for one"
+    );
+    assert!(
+        selector
+            .weight(
+                &Label::new("streamer").expect("label"),
+                Bearing::Datagram,
+                now
+            )
+            .is_none(),
+        "a node outside the datagram pool holds no datagram standing at all"
+    );
 }

@@ -1,6 +1,6 @@
 use super::{Endpoint, Tunnel};
 use crate::subscription::Entry;
-use dynet_core::{Cluster, Decision, Error, Fault, Label, Policy, Selector, Verdict};
+use dynet_core::{Bearing, Cluster, Decision, Error, Fault, Label, Policy, Selector, Verdict};
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -127,7 +127,7 @@ impl<'a> Roster<'a> {
         };
         let (verdict, egress, note) = judge(self.visit(&label));
         if let Ok(mut held) = selector.lock() {
-            held.observed(&label, verdict, Instant::now());
+            held.observed(&label, Bearing::Stream, verdict, Instant::now());
         }
         if let Ok(mut held) = trials.lock() {
             held.push(Trial {
@@ -242,7 +242,10 @@ fn port(entry: &Entry) -> Result<u16, Error> {
 }
 
 fn pick(selector: &Mutex<Selector>) -> Option<Label> {
-    selector.lock().ok()?.choose(Instant::now())
+    selector
+        .lock()
+        .ok()?
+        .choose(Bearing::Stream, Instant::now())
 }
 
 fn judge(outcome: Outcome) -> (Verdict, Option<String>, Option<String>) {

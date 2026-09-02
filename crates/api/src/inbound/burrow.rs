@@ -1,7 +1,7 @@
 use super::link::{Link, Taken};
 use super::pump::Served;
-use super::warren::{Pools, Warren};
-use dynet_core::{Ground, Name, Verdict};
+use super::warren::{self, Charge, Pools, Warren};
+use dynet_core::{Bearing, Fault, Ground, Name, Verdict};
 use smoltcp::iface::{SocketHandle as Seat, SocketSet};
 use smoltcp::socket::udp;
 use smoltcp::wire::{IpEndpoint, IpListenEndpoint};
@@ -20,6 +20,7 @@ struct Tuple {
 
 struct Bolt {
     link: Link,
+    charge: Charge,
     opened: Instant,
     touched: Instant,
     settled: bool,
@@ -34,9 +35,10 @@ pub struct Burrow<'a> {
 }
 
 impl Bolt {
-    fn new(link: Link) -> Self {
+    fn new(link: Link, charge: Charge) -> Self {
         Self {
             link,
+            charge,
             opened: Instant::now(),
             touched: Instant::now(),
             settled: false,
@@ -101,11 +103,10 @@ impl<'a> Burrow<'a> {
 
     fn close(&mut self, warren: &Warren, tuple: Tuple) {
         if let Some(bolt) = self.bolts.get(&tuple).filter(|held| !held.settled) {
-            (warren.told)(&format!(
-                "{} gone after {}ms unanswered",
-                tuple.peer,
-                bolt.opened.elapsed().as_millis()
-            ));
+            let charge = bolt.charge.clone();
+            let spent = bolt.opened.elapsed().as_millis();
+            warren::observed(self.pools, &charge, Verdict::Faulted(Fault::Silent));
+            (warren.told)(&format!("{} gone after {spent}ms unanswered", tuple.peer));
         }
         self.bolts.remove(&tuple);
         self.served.reaped += 1;
@@ -124,10 +125,10 @@ impl<'a> Burrow<'a> {
         let Some(wanted) = self.decide(warren, tuple) else {
             return;
         };
-        let Some(link) = self.reach(warren, &wanted, tuple) else {
+        let Some((link, charge)) = self.reach(warren, &wanted, tuple) else {
             return;
         };
-        let mut bolt = Bolt::new(link);
+        let mut bolt = Bolt::new(link, charge);
         bolt.link.offer(body);
         self.bolts.insert(tuple, bolt);
     }
@@ -142,23 +143,27 @@ impl<'a> Burrow<'a> {
         Some(decision.cluster().clone())
     }
 
-    fn reach(&mut self, warren: &Warren, wanted: &Name, tuple: Tuple) -> Option<Link> {
+    fn reach(&mut self, warren: &Warren, wanted: &Name, tuple: Tuple) -> Option<(Link, Charge)> {
         if !warren.bearing(wanted) {
             self.refuse(warren, wanted, "declares no datagram carriage");
             return None;
         }
-        let Some((told, passage)) = warren.passage(self.pools, wanted) else {
-            self.refuse(warren, wanted, "offered no node");
+        let Some(chosen) = warren.passage(self.pools, wanted, Bearing::Datagram) else {
+            self.refuse(warren, wanted, "offered no node that carries them");
             return None;
         };
-        if !passage.bearing() {
+        if !chosen.passage.bearing() {
             self.refuse(warren, wanted, "is reached through a detour");
             return None;
         }
-        (warren.told)(&format!("{} to {} through {told}", tuple.peer, tuple.seat));
+        (warren.told)(&format!(
+            "{} to {} through {}",
+            tuple.peer, tuple.seat, chosen.told
+        ));
         self.served.accepted += 1;
         let seat = tuple.seat;
-        Some(Link::bear(passage, seat.addr.to_string(), seat.port))
+        let link = Link::bear(chosen.passage, seat.addr.to_string(), seat.port);
+        Some((link, chosen.charge))
     }
 
     fn refuse(&mut self, warren: &Warren, wanted: &Name, why: &str) {
@@ -199,6 +204,8 @@ impl<'a> Burrow<'a> {
         }
         bolt.settled = true;
         let spent = bolt.opened.elapsed().as_millis();
+        let charge = bolt.charge.clone();
+        warren::observed(self.pools, &charge, Verdict::Answered);
         (warren.told)(&format!("{} answered after {spent}ms", tuple.peer));
         self.served.answered += 1;
     }
@@ -214,6 +221,8 @@ impl<'a> Burrow<'a> {
             return;
         }
         bolt.settled = true;
+        let charge = bolt.charge.clone();
+        warren::observed(self.pools, &charge, verdict);
         (warren.told)(&format!("{} verdict {verdict:?}", tuple.peer));
         match matches!(verdict, Verdict::Faulted(_)) {
             true => self.served.faulted += 1,

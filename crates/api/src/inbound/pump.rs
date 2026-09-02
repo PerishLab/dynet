@@ -3,8 +3,8 @@ use super::clock::{beat, lasting, raise};
 use super::link::Link;
 use super::strand::{Strand, downward, upward};
 use super::warden;
-use super::warren::{Pools, Warren};
-use dynet_core::{Error, Ground, Name, Policy, Selector, Verdict};
+use super::warren::{self, Pools, Warren};
+use dynet_core::{Bearing, Error, Ground, Name, Policy, Selector, Verdict};
 use smoltcp::iface::{Interface, SocketHandle as Seat, SocketSet};
 use smoltcp::phy::{Medium, TunTapInterface, wait};
 use smoltcp::socket::tcp;
@@ -239,17 +239,17 @@ impl Loom<'_> {
     }
 
     fn begin(&mut self, seat: Seat, warren: &Warren, wanted: &Name) -> bool {
-        let Some((told, passage)) = warren.passage(self.pools, wanted) else {
+        let Some(chosen) = warren.passage(self.pools, wanted, Bearing::Stream) else {
             return false;
         };
         let socket = self.sockets.get_mut::<tcp::Socket>(seat);
         let Some(target) = socket.local_endpoint() else {
             return false;
         };
-        (warren.told)(&format!("{target} through {told}"));
+        (warren.told)(&format!("{target} through {}", chosen.told));
         self.served.accepted += 1;
-        let link = Link::open(passage, target.addr.to_string(), target.port);
-        self.strands.insert(seat, Strand::new(link));
+        let link = Link::open(chosen.passage, target.addr.to_string(), target.port);
+        self.strands.insert(seat, Strand::new(link, chosen.charge));
         true
     }
 
@@ -261,8 +261,10 @@ impl Loom<'_> {
         if let Some(verdict) = strand.link.verdict() {
             strand.faulted = matches!(verdict, Verdict::Faulted(_));
             strand.settled = true;
+            warren::observed(self.pools, &strand.charge, verdict);
             (warren.told)(&format!(
-                "verdict {verdict:?} after {}ms",
+                "{} verdict {verdict:?} after {}ms",
+                strand.charge.label.get(),
                 strand.opened.elapsed().as_millis()
             ));
             match strand.faulted {

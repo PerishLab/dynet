@@ -8,7 +8,7 @@ mod label;
 mod pool;
 mod routing;
 
-pub use capability::{Capability, Carriage};
+pub use capability::{Bearing, Capability, Carriage};
 pub use cluster::{Cluster, Name, Node};
 pub use error::Error;
 pub use instance::Instance;

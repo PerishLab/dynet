@@ -1,4 +1,6 @@
-use dynet_core::{Affinity, Capability, Carriage, Cluster, Label, Name, Node, Pool, Spread};
+use dynet_core::{
+    Affinity, Bearing, Capability, Carriage, Cluster, Label, Name, Node, Pool, Spread,
+};
 use std::time::Duration;
 
 fn node(label: &str, carriage: Carriage) -> Node {
@@ -42,11 +44,24 @@ fn carriage() {
 
 #[test]
 fn weakest() {
-    assert!(cluster(&[Carriage::Native, Carriage::Relay]).datagrams());
+    assert!(cluster(&[Carriage::Relay, Carriage::Relay]).datagrams());
     assert!(
-        !cluster(&[Carriage::Native, Carriage::Absent]).datagrams(),
-        "one node without datagrams must disqualify the cluster it spreads across"
+        cluster(&[Carriage::Relay, Carriage::Absent]).datagrams(),
+        "one node that carries them is enough, because selection chooses within those that do"
     );
+    assert!(
+        !cluster(&[Carriage::Absent, Carriage::Absent]).datagrams(),
+        "a cluster with no bearer at all carries none"
+    );
+}
+
+#[test]
+fn bearers() {
+    let held = cluster(&[Carriage::Relay, Carriage::Absent]);
+    assert_eq!(held.bearers(Bearing::Stream).len(), 2, "every node streams");
+    let borne = held.bearers(Bearing::Datagram);
+    assert_eq!(borne.len(), 1, "only the declared bearer takes datagrams");
+    assert_eq!(borne[0].label().get(), "node-0");
 }
 
 #[test]

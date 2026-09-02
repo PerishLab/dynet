@@ -1,10 +1,10 @@
 use super::clock::lasting;
 use super::store::{Key, Recall};
-use super::warren::{Pools, Warren};
+use super::warren::{self, Chosen, Pools, Warren};
 use crate::host::Route;
 use crate::outbound::Listener;
 use crate::resolver::{self, Answer, Packet, QUAD};
-use dynet_core::{Decision, Domain, Error, Ground, Name};
+use dynet_core::{Bearing, Decision, Domain, Error, Fault, Ground, Name, Verdict};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
@@ -180,17 +180,29 @@ impl Post<'_> {
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
-        let (told, passage) = self
+        let chosen = self
             .warren
-            .passage(self.pools, wanted)
+            .passage(self.pools, wanted, Bearing::Stream)
             .ok_or_else(|| Error::new(format!("cluster {} offered no node", wanted.get())))?;
-        let (mut speaker, mut listener) =
-            passage.open(self.warren.upstream, 53).map_err(|fault| {
-                Error::new(format!("the resolver could not reach a node: {fault:?}"))
-            })?;
-        speaker.send(framed)?;
-        Ok((told, gather(&mut listener)?))
+        let carried = through(&chosen, self.warren.upstream, framed);
+        let verdict = match &carried {
+            Ok(_) => Verdict::Answered,
+            Err(fault) => Verdict::Faulted(*fault),
+        };
+        warren::observed(self.pools, &chosen.charge, verdict);
+        match carried {
+            Ok(body) => Ok((chosen.told, body)),
+            Err(fault) => Err(Error::new(format!(
+                "the resolver could not reach a node: {fault:?}"
+            ))),
+        }
     }
+}
+
+fn through(chosen: &Chosen, upstream: &str, framed: &[u8]) -> Result<Vec<u8>, Fault> {
+    let (mut speaker, mut listener) = chosen.passage.open(upstream, 53)?;
+    speaker.send(framed).map_err(|_| Fault::Severed)?;
+    gather(&mut listener).map_err(|_| listener.fault().unwrap_or(Fault::Silent))
 }
 
 fn poisoned() -> Error {

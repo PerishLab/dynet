@@ -28,11 +28,19 @@ are.
 - Because a name is resolved through its cluster, that answer must stay correct
   for every node in it: nodes in one cluster are interchangeable with respect to
   the addresses their vantage returns.
-- A `Capability` declares what an outbound can carry. `Carriage` is `Native`,
-  `Associate`, `Relay` or `Absent`, because subscription protocols support
-  datagrams unevenly. This is a routing input, not an implementation detail: a
-  cluster carries datagrams only when every node does, since a connection may
-  land on any of them.
+- A `Capability` declares what an outbound can carry, and `Carriage` names the
+  protocol the outbound speaks rather than the flag its vendor set: `Relay` is
+  datagrams wrapped in the node's own stream, which is what this repository
+  speaks, and `Absent` is a protocol reached by stream alone. `Native` and
+  `Associate` keep their meaning and have no producer yet.
+- `Bearing` is what a piece of traffic needs, `Stream` or `Datagram`. A cluster
+  carries datagrams when any of its nodes does, and datagram selection chooses
+  only within those, so one node that cannot carry them costs that node and not
+  the cluster.
+- A node's standing is kept per bearing. A node silent on datagrams loses its
+  datagram weight and keeps its stream weight, because a vendor flag is a claim
+  and the score is where that claim is checked. Nothing probes carriage ahead of
+  time; the first real request through a node is the measurement.
 - A `Pool` is what a rule resolves to. Spreading is the default and `Pool::wide`
   says so; affinity is the exception and `Pool::bound` requires naming the
   window it holds for.

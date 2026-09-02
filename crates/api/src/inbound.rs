@@ -10,4 +10,4 @@ mod warren;
 pub use link::{Link, Taken};
 pub use pump::{Served, serve};
 pub use store::Store;
-pub use warren::Warren;
+pub use warren::{Charge, Warren};
