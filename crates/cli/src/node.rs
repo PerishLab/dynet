@@ -5,6 +5,8 @@ use dynet_core::{Domain, Error, Name, Router, Rule, Subject, Table};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+const LOOSE: u32 = 0;
+
 pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Error> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
@@ -97,6 +99,7 @@ pub fn board(
         entry
             .field("uuid")
             .ok_or_else(|| Error::new("no identity"))?,
+        LOOSE,
     )?;
     Tunnel::open(&endpoint, host, port)
 }
@@ -116,7 +119,7 @@ pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<String, Err
     let uuid = entry
         .field("uuid")
         .ok_or_else(|| Error::new("no identity"))?;
-    let endpoint = Endpoint::new(host, port, uuid)?;
+    let endpoint = Endpoint::new(host, port, uuid, LOOSE)?;
     let mut tunnel = Tunnel::open(&endpoint, "api.ipify.org", 80)?;
     tunnel
         .send(b"GET /?format=text HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")?;
@@ -156,7 +159,7 @@ pub fn spread(path: &PathBuf, cluster: &str, aim: &Aim) -> Result<ExitCode, Erro
         .ok_or_else(|| Error::new(format!("no cluster named {cluster}")))?;
     let name = Domain::new(PROBE)?;
     let router = Router::new(table(&name, wanted.name())?);
-    let roster = Roster::aimed(&entries, &aim.target);
+    let roster = Roster::aimed(&entries, &aim.target, LOOSE);
     let run = roster.drive(wanted, &router.asked(&name), aim.count)?;
     Ok(report(&run, aim.count))
 }

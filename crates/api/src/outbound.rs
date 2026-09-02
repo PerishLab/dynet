@@ -1,4 +1,5 @@
 mod blame;
+mod bond;
 mod book;
 mod chunk;
 mod kdf;
@@ -9,6 +10,7 @@ mod shadow;
 mod spread;
 mod vmess;
 
+pub use bond::{marked, reach};
 pub use book::Book;
 pub use chunk::Chunk;
 pub use parts::{Egress, Ingress};

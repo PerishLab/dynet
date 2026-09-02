@@ -27,7 +27,7 @@ fn reaches() {
     let port: u16 = field(entry, "port").expect("port").parse().expect("port");
     let uuid = field(entry, "uuid").expect("uuid");
 
-    let endpoint = Endpoint::new(host, port, &uuid).expect("endpoint");
+    let endpoint = Endpoint::new(host, port, &uuid, 0).expect("endpoint");
     let mut tunnel = Tunnel::open(&endpoint, "api.ipify.org", 80).expect("tunnel");
     tunnel
         .send(b"GET /?format=text HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")

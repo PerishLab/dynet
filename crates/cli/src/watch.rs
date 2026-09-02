@@ -10,7 +10,7 @@ pub struct Errand {
     pub ports: String,
     pub upstream: String,
     pub claim: String,
-    pub under: Option<String>,
+    pub bare: bool,
     pub unit: bool,
     pub holds: String,
     pub port: u16,
@@ -67,7 +67,7 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         ports: &listed(&errand.ports)?,
         port: errand.port,
         upstream: &errand.upstream,
-        book: &dynet_api::outbound::Book::new(),
+        book: &dynet_api::outbound::Book::new(instance.mark()),
         store: &inbound::Store::new(),
         told: &told,
     };
@@ -120,9 +120,9 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
 
 pub fn unit(instance: &Instance, errand: &Errand) -> String {
     let name = instance.get();
-    let under = match &errand.under {
-        Some(owner) => format!(" --under {owner}"),
-        None => String::new(),
+    let bare = match errand.bare {
+        true => " --bare",
+        false => "",
     };
     let run = format!(
         "/usr/local/bin/dynet --instance {name} forward --subscription {} --clusters {} --cluster {} --claim {} --ports {} --upstream {} --name {} --seconds 0",
@@ -145,7 +145,7 @@ pub fn unit(instance: &Instance, errand: &Errand) -> String {
         "Type=simple".to_string(),
         format!("ExecStartPre=-/usr/local/bin/dynet --instance {name} down"),
         format!(
-            "ExecStartPre=/usr/local/bin/dynet --instance {name} up --claim {}{under}",
+            "ExecStartPre=/usr/local/bin/dynet --instance {name} up --claim {}{bare}",
             errand.claim
         ),
         format!("ExecStart={run}"),

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn literal() {
-    let book = Book::new();
+    let book = Book::new(0);
     let held = book
         .find("203.0.113.9", "203.0.113.1")
         .expect("an address needs no lookup");
@@ -21,7 +21,7 @@ fn upstream() -> Option<String> {
 fn carries() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
-    let answer = resolver::locate(&name, &held).expect("a lookup");
+    let answer = resolver::locate(&name, &held, 0).expect("a lookup");
     println!("{name} {} life {}", answer.address, answer.life);
     assert!(
         answer.life > 0,
@@ -34,7 +34,7 @@ fn carries() {
 fn hurries() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
-    let book = Book::new();
+    let book = Book::new(0);
     let cold = Instant::now();
     let first = book.find(&name, &held).expect("a first lookup");
     let asked = cold.elapsed();
@@ -55,8 +55,8 @@ fn hurries() {
 fn follows() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
-    let book = Book::new();
-    let answer = resolver::locate(&name, &held).expect("a lookup");
+    let book = Book::new(0);
+    let answer = resolver::locate(&name, &held, 0).expect("a lookup");
     let life = Duration::from_secs(u64::from(answer.life)).max(Duration::from_secs(1));
     book.find(&name, &held).expect("a first lookup");
     let mut seen = Vec::new();

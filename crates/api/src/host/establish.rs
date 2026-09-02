@@ -1,8 +1,6 @@
 use super::{Cleared, Link, Route, Shape, Veil, reclaim, survey};
 use dynet_core::{Error, Instance};
 
-pub const BARE: &str = "nobody";
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Standing {
     pub cleared: Cleared,
@@ -13,7 +11,7 @@ pub fn establish(
     instance: &Instance,
     port: u16,
     claim: &str,
-    under: Option<&str>,
+    bare: bool,
 ) -> Result<Standing, Error> {
     let shape = survey()?;
     if !shape.ownable() || matches!(shape, Shape::Resolved { upstream: false }) {
@@ -23,22 +21,22 @@ pub fn establish(
         )));
     }
     let cleared = reclaim(instance)?;
-    match raise(instance, port, claim, under) {
+    match raise(instance, port, claim, bare) {
         Ok(()) => Ok(Standing {
             cleared,
-            veiled: under != Some(BARE),
+            veiled: !bare,
         }),
         Err(error) => Err(unwind(instance, error)),
     }
 }
 
-fn raise(instance: &Instance, port: u16, claim: &str, under: Option<&str>) -> Result<(), Error> {
+fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<(), Error> {
     Link::create(instance)?;
     Route::create(instance, claim)?;
-    if under == Some(BARE) {
+    if bare {
         return Ok(());
     }
-    Veil::raise(instance, port, under)
+    Veil::raise(instance, port)
 }
 
 fn unwind(instance: &Instance, error: Error) -> Error {

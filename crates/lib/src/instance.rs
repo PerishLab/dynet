@@ -3,6 +3,7 @@ use crate::error::Error;
 const PREFIX: &str = "dynet";
 const BASE: u32 = 17000;
 const SPAN: u32 = 1000;
+const STAMP: u32 = 0x6479_0000;
 const SEED: u64 = 0xcbf2_9ce4_8422_2325;
 const ODD: u64 = 0x0000_0100_0000_01b3;
 
@@ -30,7 +31,15 @@ impl Instance {
     }
 
     pub fn priority(&self) -> u32 {
-        BASE + u32::try_from(scramble(&self.0) % u64::from(SPAN)).unwrap_or_default()
+        BASE + self.spread()
+    }
+
+    pub fn mark(&self) -> u32 {
+        STAMP + self.spread()
+    }
+
+    fn spread(&self) -> u32 {
+        u32::try_from(scramble(&self.0) % u64::from(SPAN)).unwrap_or_default()
     }
 }
 

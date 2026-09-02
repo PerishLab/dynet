@@ -35,7 +35,7 @@ enum Command {
         #[arg(long, default_value = dynet_api::host::PREFIX)]
         claim: String,
         #[arg(long)]
-        under: Option<String>,
+        bare: bool,
     },
     Down,
     Resolve {
@@ -88,7 +88,7 @@ enum Command {
         #[arg(long, default_value = "1.1.1.1")]
         upstream: String,
         #[arg(long)]
-        under: Option<String>,
+        bare: bool,
         #[arg(long)]
         unit: bool,
         #[arg(long)]
@@ -138,7 +138,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     let instance = Instance::new(&config.instance)?;
     match cli.command {
         Command::Doctor => doctor(&instance),
-        Command::Up { claim, under } => raise(&instance, config.port, &claim, under.as_deref()),
+        Command::Up { claim, bare } => raise(&instance, config.port, &claim, bare),
         Command::Down => lower(&instance),
         Command::Resolve {
             subscription,
@@ -169,7 +169,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             claim,
             ports,
             upstream,
-            under,
+            bare,
             unit,
             name,
             holds,
@@ -183,7 +183,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
                 ports,
                 upstream,
                 claim,
-                under,
+                bare,
                 unit,
                 holds,
                 port: config.port,
@@ -217,13 +217,8 @@ fn doctor(instance: &Instance) -> Result<ExitCode, Error> {
     )
 }
 
-fn raise(
-    instance: &Instance,
-    port: u16,
-    claim: &str,
-    under: Option<&str>,
-) -> Result<ExitCode, Error> {
-    let standing = host::establish(instance, port, claim, under)?;
+fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<ExitCode, Error> {
+    let standing = host::establish(instance, port, claim, bare)?;
     println!(
         "up: reclaimed={} veiled={}",
         standing.cleared.any(),

@@ -90,7 +90,7 @@ impl Post<'_> {
             return self.after(&key, &domain, &decision, refresh);
         }
         if decision.ground() == Ground::Default {
-            let plain = asking.relay(self.warren.upstream)?;
+            let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
             self.speak(&plain, call)?;
             return Ok(format!("{} left to the upstream", query.name));
         }

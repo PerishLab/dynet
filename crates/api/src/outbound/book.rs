@@ -27,11 +27,15 @@ enum Recall {
 #[derive(Debug, Default)]
 pub struct Book {
     known: Arc<Known>,
+    mark: u32,
 }
 
 impl Book {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(mark: u32) -> Self {
+        Self {
+            known: Arc::default(),
+            mark,
+        }
     }
 
     pub fn find(&self, host: &str, upstream: &str) -> Result<String, Error> {
@@ -65,7 +69,7 @@ impl Book {
     }
 
     fn settle(&self, host: &str, upstream: &str) -> Result<String, Error> {
-        let answer = resolver::locate(host, upstream)?;
+        let answer = resolver::locate(host, upstream, self.mark)?;
         renew(&self.known, host, &answer);
         Ok(answer.address.to_string())
     }
@@ -74,7 +78,8 @@ impl Book {
         let known = Arc::clone(&self.known);
         let host = host.to_string();
         let upstream = upstream.to_string();
-        std::thread::spawn(move || match resolver::locate(&host, &upstream) {
+        let mark = self.mark;
+        std::thread::spawn(move || match resolver::locate(&host, &upstream, mark) {
             Ok(answer) => renew(&known, &host, &answer),
             Err(_) => missed(&known, &host),
         });

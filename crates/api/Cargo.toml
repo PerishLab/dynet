@@ -20,6 +20,7 @@ hmac.workspace = true
 sha2.workspace = true
 md-5.workspace = true
 smoltcp.workspace = true
+socket2.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

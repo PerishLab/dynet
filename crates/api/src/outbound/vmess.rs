@@ -25,6 +25,7 @@ pub struct Endpoint {
     host: String,
     port: u16,
     identity: [u8; 16],
+    mark: u32,
 }
 
 pub struct Tunnel {
@@ -36,11 +37,12 @@ pub struct Tunnel {
 }
 
 impl Endpoint {
-    pub fn new(host: impl Into<String>, port: u16, uuid: &str) -> Result<Self, Error> {
+    pub fn new(host: impl Into<String>, port: u16, uuid: &str, mark: u32) -> Result<Self, Error> {
         Ok(Self {
             host: host.into(),
             port,
             identity: parse(uuid)?,
+            mark,
         })
     }
 
@@ -73,8 +75,7 @@ impl Tunnel {
 
     pub fn dial(endpoint: &Endpoint) -> Result<Self, Error> {
         let seat = endpoint.seat()?;
-        let stream = TcpStream::connect_timeout(&seat, BRIEF)
-            .map_err(|error| Error::new(format!("cannot reach the node: {error}")))?;
+        let stream = crate::outbound::reach(seat, endpoint.mark, BRIEF)?;
         stream
             .set_read_timeout(Some(BRIEF))
             .and_then(|()| stream.set_write_timeout(Some(PATIENT)))

@@ -82,9 +82,8 @@ impl<'a> Packet<'a> {
         Ok(framed)
     }
 
-    pub fn relay(&self, upstream: &str) -> Result<Vec<u8>, Error> {
-        let socket = std::net::UdpSocket::bind(("0.0.0.0", 0))
-            .map_err(|error| Error::new(format!("cannot open a relaying socket: {error}")))?;
+    pub fn relay(&self, upstream: &str, stamp: u32) -> Result<Vec<u8>, Error> {
+        let socket = crate::outbound::marked(stamp)?;
         socket
             .set_read_timeout(Some(std::time::Duration::from_secs(8)))
             .map_err(|error| Error::new(format!("cannot bound a relay: {error}")))?;
@@ -148,11 +147,11 @@ pub fn ask(name: &str, mark: u16) -> Result<Vec<u8>, Error> {
     Ok(framed)
 }
 
-pub fn locate(name: &str, upstream: &str) -> Result<Answer, Error> {
+pub fn locate(name: &str, upstream: &str, stamp: u32) -> Result<Answer, Error> {
     let mut spoken = Error::new(format!("{name} was never asked"));
     for round in 0..ROUNDS {
         let mark = MARK.wrapping_add(u16::try_from(round).unwrap_or_default());
-        match attempt(name, upstream, mark) {
+        match attempt(name, (upstream, stamp), mark) {
             Ok(answer) => return Ok(answer),
             Err(error) => spoken = error,
         }
@@ -160,15 +159,15 @@ pub fn locate(name: &str, upstream: &str) -> Result<Answer, Error> {
     Err(spoken)
 }
 
-fn attempt(name: &str, upstream: &str, mark: u16) -> Result<Answer, Error> {
-    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0))
-        .map_err(|error| Error::new(format!("cannot open a resolving socket: {error}")))?;
+fn attempt(name: &str, upstream: (&str, u32), mark: u16) -> Result<Answer, Error> {
+    let (held, stamp) = upstream;
+    let socket = crate::outbound::marked(stamp)?;
     socket
         .set_read_timeout(Some(BRIEF))
         .map_err(|error| Error::new(format!("cannot bound a lookup: {error}")))?;
     let framed = ask(name, mark)?;
     socket
-        .send_to(&framed[2..], (upstream, 53))
+        .send_to(&framed[2..], (held, 53))
         .map_err(|error| Error::new(format!("cannot ask about {name}: {error}")))?;
     let mut room = [0u8; 1500];
     let size = socket

@@ -44,6 +44,11 @@ are.
 - A `Pool` is what a rule resolves to. Spreading is the default and `Pool::wide`
   says so; affinity is the exception and `Pool::bound` requires naming the
   window it holds for.
+- Dynet's own traffic is named by a mark it stamps on every socket it opens,
+  derived from the instance name. A rule ahead of the instance's own sends
+  marked traffic to the main table, and the firewall table accepts it before
+  the redirect, so the exemption names the traffic and not the account it runs
+  under.
 - There is no fake address space. DNS answers are real, so the rule matches and
   the cluster is chosen when the name is asked for, and the name is resolved
   through that cluster.

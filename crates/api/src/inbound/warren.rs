@@ -38,7 +38,7 @@ impl Warren<'_> {
     pub fn passage(&self, pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
         let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
         let label = chosen(pools, wanted, bearing)?;
-        let roster = Roster::new(self.entries);
+        let roster = Roster::new(self.entries, self.instance.mark());
         let Some(front) = cluster.via() else {
             let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
             let told = label.get().to_string();

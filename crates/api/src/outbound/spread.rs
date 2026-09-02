@@ -83,17 +83,19 @@ impl Run {
 pub struct Roster<'a> {
     entries: &'a [Entry],
     target: String,
+    mark: u32,
 }
 
 impl<'a> Roster<'a> {
-    pub fn new(entries: &'a [Entry]) -> Self {
-        Self::aimed(entries, PROBE)
+    pub fn new(entries: &'a [Entry], mark: u32) -> Self {
+        Self::aimed(entries, PROBE, mark)
     }
 
-    pub fn aimed(entries: &'a [Entry], target: &str) -> Self {
+    pub fn aimed(entries: &'a [Entry], target: &str, mark: u32) -> Self {
         Self {
             entries,
             target: target.to_string(),
+            mark,
         }
     }
 
@@ -176,6 +178,7 @@ impl<'a> Roster<'a> {
             entry
                 .field("uuid")
                 .ok_or_else(|| Error::new("no identity"))?,
+            self.mark,
         )
     }
 
@@ -230,6 +233,7 @@ impl<'a> Roster<'a> {
             entry
                 .field("uuid")
                 .ok_or_else(|| Error::new("no identity"))?,
+            self.mark,
         )
     }
 }
