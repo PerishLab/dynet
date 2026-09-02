@@ -54,6 +54,11 @@ landing, run `cargo fmt --all --check`,
 `cargo check --locked --workspace --all-targets --release`,
 `cargo test --locked --workspace`, and `ectropy .`.
 
+A test that reaches the network is `#[ignore]` and is driven on a host, never
+here. The workstation's own tunnel client answers for servers that do not
+exist, so a check made against it passes or fails for reasons that are not the
+code's.
+
 Never work or commit directly in the clean `main` integration checkout after
 the initial repository bootstrap. Use a dedicated task branch and land through
 the repository guard.
