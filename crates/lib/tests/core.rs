@@ -1,9 +1,9 @@
-use dynet_core::{Affinity, Capability, Carriage, Cluster, Name, Node, Pool, Spread};
+use dynet_core::{Affinity, Capability, Carriage, Cluster, Label, Name, Node, Pool, Spread};
 use std::time::Duration;
 
-fn node(name: &str, carriage: Carriage) -> Node {
+fn node(label: &str, carriage: Carriage) -> Node {
     Node::new(
-        Name::new(name).expect("node name"),
+        Label::new(label).expect("node label"),
         Capability::new(carriage),
     )
 }

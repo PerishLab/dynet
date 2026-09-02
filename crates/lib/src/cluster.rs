@@ -1,12 +1,13 @@
 use crate::Capability;
 use crate::error::Error;
+use crate::label::Label;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Name(String);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Node {
-    name: Name,
+    label: Label,
     capability: Capability,
 }
 
@@ -33,12 +34,12 @@ impl Name {
 }
 
 impl Node {
-    pub fn new(name: Name, capability: Capability) -> Self {
-        Self { name, capability }
+    pub fn new(label: Label, capability: Capability) -> Self {
+        Self { label, capability }
     }
 
-    pub fn name(&self) -> &Name {
-        &self.name
+    pub fn label(&self) -> &Label {
+        &self.label
     }
 
     pub fn capability(&self) -> Capability {

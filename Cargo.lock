@@ -160,6 +160,9 @@ dependencies = [
 [[package]]
 name = "dynet-api"
 version = "0.1.0"
+dependencies = [
+ "dynet-core",
+]
 
 [[package]]
 name = "dynet-core"

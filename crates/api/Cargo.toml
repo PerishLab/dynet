@@ -10,3 +10,9 @@ publish = false
 [lib]
 name = "dynet_api"
 path = "src/lib.rs"
+
+[dependencies]
+dynet-core.workspace = true
+
+[dev-dependencies]
+dynet-core.workspace = true
