@@ -1,4 +1,4 @@
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Span};
 use smoltcp::phy::{Device, Medium, RxToken, TunTapInterface, TxToken, wait};
 use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket};
@@ -10,8 +10,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-const SEAT: Ipv4Addr = Ipv4Addr::new(198, 51, 100, 1);
-const SPARE: Ipv4Addr = Ipv4Addr::new(198, 51, 100, 129);
 const FIRST: u16 = 20000;
 const REST: Duration = Duration::from_millis(5);
 const BRIEF: Duration = Duration::from_secs(8);
@@ -23,6 +21,7 @@ struct Held {
 }
 
 pub struct Divert<'a> {
+    span: Span,
     seat: u16,
     mark: u32,
     book: Mutex<HashMap<u16, Held>>,
@@ -34,17 +33,19 @@ pub struct Divert<'a> {
 
 pub fn divert(
     instance: &Instance,
-    span: Duration,
+    ground: (Span, Duration),
     told: &(dyn Fn(&str) + Sync),
 ) -> Result<usize, Error> {
-    let listener = TcpListener::bind((SEAT, 0))
+    let (span, patience) = ground;
+    let listener = TcpListener::bind((span.seat(), 0))
         .map_err(|error| Error::new(format!("cannot seat the diverter: {error}")))?;
     let seat = listener
         .local_addr()
         .map_err(|error| Error::new(format!("cannot read the diverter seat: {error}")))?
         .port();
-    told(&format!("diverting to {SEAT}:{seat}"));
+    told(&format!("diverting to {}:{seat}", span.seat()));
     let divert = Divert {
+        span,
         seat,
         mark: instance.mark(),
         book: Mutex::new(HashMap::new()),
@@ -55,7 +56,7 @@ pub fn divert(
     };
     std::thread::scope(|scope| {
         scope.spawn(|| divert.greet(&listener));
-        divert.pump(instance, span)
+        divert.pump(instance, patience)
     })?;
     Ok(divert.carried.load(Ordering::Relaxed))
 }
@@ -114,7 +115,7 @@ impl Divert<'_> {
         let Some(ports) = ends(&packet) else {
             return false;
         };
-        match target == SPARE {
+        match target == self.span.spare() {
             true => self.back(body, ports),
             false => self.forth(body, (source, target), ports),
         }
@@ -126,7 +127,11 @@ impl Divert<'_> {
             target: SocketAddrV4::new(seen.1, ports.1),
         };
         let spare = self.claim(held);
-        write(body, (SPARE, SEAT), (spare, self.seat));
+        write(
+            body,
+            (self.span.spare(), self.span.seat()),
+            (spare, self.seat),
+        );
         true
     }
 
@@ -155,8 +160,10 @@ impl Divert<'_> {
             book.insert(spare, held);
         }
         (self.told)(&format!(
-            "{} to {} becomes {SPARE}:{spare}",
-            held.caller, held.target
+            "{} to {} becomes {}:{spare}",
+            held.caller,
+            held.target,
+            self.span.spare()
         ));
         spare
     }

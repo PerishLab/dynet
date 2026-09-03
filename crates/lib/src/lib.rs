@@ -14,6 +14,8 @@ pub use error::Error;
 pub use instance::Instance;
 pub use label::Label;
 pub use pool::{Affinity, Blame, Fault, Policy, Pool, Selector, Spread, Standing, Verdict};
-pub use routing::{Decision, Domain, Ground, Issue, Ledger, Range, Router, Rule, Subject, Table};
+pub use routing::{
+    Decision, Domain, Ground, Issue, Ledger, Range, Router, Rule, Span, Subject, Table,
+};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

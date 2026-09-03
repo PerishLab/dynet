@@ -54,6 +54,10 @@ are.
   same seat, so the reply carries the source connection tracking expects and a
   strict resolver accepts it. Binding to every address lets the kernel choose
   the source instead, which only a tolerant socket will take.
+- A `Span` is the address range Dynet occupies on the host, injected through
+  configuration rather than a flag because it is a fact about the machine. Its
+  first address is what the device wears and the middle of its upper half is the
+  synthetic peer a diverted session is rewritten to carry.
 - There is no fake address space. DNS answers are real, so the rule matches and
   the cluster is chosen when the name is asked for, and the name is resolved
   through that cluster.

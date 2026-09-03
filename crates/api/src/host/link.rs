@@ -1,5 +1,5 @@
 use super::{attempt, run};
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Span};
 
 const ROOM: &str = "16384";
 
@@ -18,10 +18,11 @@ impl Link {
         Ok(detail.contains("tun "))
     }
 
-    pub fn create(instance: &Instance) -> Result<(), Error> {
+    pub fn create(instance: &Instance, span: Span) -> Result<(), Error> {
         let name = instance.get();
         run("ip", &["tuntap", "add", "dev", name, "mode", "tun"])?;
         run("ip", &["link", "set", name, "mtu", ROOM])?;
+        run("ip", &["addr", "add", &span.worn(), "dev", name])?;
         run("ip", &["link", "set", name, "up"])?;
         Ok(())
     }

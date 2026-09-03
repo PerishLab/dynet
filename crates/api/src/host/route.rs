@@ -1,6 +1,6 @@
 use super::fragment::Fragment;
 use super::{attempt, run};
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Span};
 use std::path::PathBuf;
 
 const NUMBER: &str = "178";
@@ -23,13 +23,17 @@ impl Route {
             .is_ok_and(|text| !text.trim().is_empty())
     }
 
-    pub fn create(instance: &Instance, claim: &str) -> Result<(), Error> {
+    pub fn create(instance: &Instance, claim: &str, span: Span) -> Result<(), Error> {
         let name = instance.get();
         let priority = instance.priority();
         Fragment::new(Self::registry(instance), format!("{NUMBER}\t{name}\n")).write()?;
         if !claim.ends_with(WHOLE) {
             run("ip", &["route", "add", claim, "dev", name, "table", name])?;
         }
+        run(
+            "ip",
+            &["route", "add", &span.get(), "dev", name, "table", name],
+        )?;
         let spared = (priority - 1).to_string();
         let mark = instance.mark().to_string();
         run(

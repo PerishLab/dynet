@@ -6,7 +6,7 @@ mod route;
 mod shape;
 mod veil;
 
-pub use establish::{Standing, establish};
+pub use establish::{Ground, Standing, establish};
 pub use fragment::{Fragment, Held, MARKER, held};
 pub use link::Link;
 pub use reclaim::{Cleared, reclaim, sweep};

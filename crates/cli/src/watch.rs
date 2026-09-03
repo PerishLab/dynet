@@ -1,5 +1,5 @@
 use dynet_api::{catalog, inbound, subscription};
-use dynet_core::{Domain, Error, Instance, Name, Range, Router, Rule, Subject, Table};
+use dynet_core::{Domain, Error, Instance, Name, Range, Router, Rule, Span, Subject, Table};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -160,10 +160,10 @@ pub fn unit(instance: &Instance, errand: &Errand) -> String {
     .join("\n")
 }
 
-pub fn divert(instance: &Instance, seconds: u64) -> Result<ExitCode, Error> {
+pub fn divert(instance: &Instance, span: Span, seconds: u64) -> Result<ExitCode, Error> {
     let told = |line: &str| println!("  {line}");
-    let span = std::time::Duration::from_secs(seconds);
-    let carried = inbound::divert(instance, span, &told)?;
+    let patience = std::time::Duration::from_secs(seconds);
+    let carried = inbound::divert(instance, (span, patience), &told)?;
     println!("carried {carried}");
     match carried > 0 {
         true => Ok(ExitCode::SUCCESS),

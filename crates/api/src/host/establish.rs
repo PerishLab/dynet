@@ -1,5 +1,5 @@
 use super::{Cleared, Link, Route, Shape, Veil, reclaim, survey};
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Standing {
@@ -7,12 +7,14 @@ pub struct Standing {
     pub veiled: bool,
 }
 
-pub fn establish(
-    instance: &Instance,
-    port: u16,
-    claim: &str,
-    bare: bool,
-) -> Result<Standing, Error> {
+pub struct Ground<'a> {
+    pub port: u16,
+    pub claim: &'a str,
+    pub span: Span,
+    pub bare: bool,
+}
+
+pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
     let shape = survey()?;
     if !shape.ownable() || matches!(shape, Shape::Resolved { upstream: false }) {
         return Err(Error::new(format!(
@@ -21,22 +23,22 @@ pub fn establish(
         )));
     }
     let cleared = reclaim(instance)?;
-    match raise(instance, port, claim, bare) {
+    match raise(instance, ground) {
         Ok(()) => Ok(Standing {
             cleared,
-            veiled: !bare,
+            veiled: !ground.bare,
         }),
         Err(error) => Err(unwind(instance, error)),
     }
 }
 
-fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<(), Error> {
-    Link::create(instance)?;
-    Route::create(instance, claim)?;
-    if bare {
+fn raise(instance: &Instance, ground: &Ground) -> Result<(), Error> {
+    Link::create(instance, ground.span)?;
+    Route::create(instance, ground.claim, ground.span)?;
+    if ground.bare {
         return Ok(());
     }
-    Veil::raise(instance, port)
+    Veil::raise(instance, ground.port)
 }
 
 fn unwind(instance: &Instance, error: Error) -> Error {

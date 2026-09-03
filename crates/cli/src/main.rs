@@ -6,9 +6,11 @@ mod node;
 mod watch;
 
 use dynet_api::outbound::PROBE;
+
+const WHOLE: &str = "0.0.0.0/0";
 use node::Aim;
 
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Span};
 use plumb::config::Cascade;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,10 +22,8 @@ use std::process::ExitCode;
     about = "Dynet command-line boundary"
 )]
 struct Cli {
-    #[arg(long, global = true)]
-    instance: Option<String>,
-    #[arg(long, global = true)]
-    port: Option<u16>,
+    #[command(flatten)]
+    told: ConfigArgs,
     #[command(subcommand)]
     command: Command,
 }
@@ -32,7 +32,7 @@ struct Cli {
 enum Command {
     Doctor,
     Up {
-        #[arg(long, default_value = dynet_api::host::PREFIX)]
+        #[arg(long, default_value = WHOLE)]
         claim: String,
         #[arg(long)]
         bare: bool,
@@ -106,8 +106,11 @@ enum Command {
 
 #[derive(Debug, Cascade)]
 struct Config {
+    #[cascade(arg)]
     instance: String,
+    #[cascade(arg)]
     port: u16,
+    span: String,
 }
 
 impl Default for Config {
@@ -115,6 +118,7 @@ impl Default for Config {
         Self {
             instance: "dynet0".to_string(),
             port: 15353,
+            span: host::PREFIX.to_string(),
         }
     }
 }
@@ -131,20 +135,14 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<ExitCode, Error> {
-    let config = Config::resolve_with(
-        None,
-        ConfigPartial {
-            instance: cli.instance,
-            port: cli.port,
-        },
-    )
-    .map_err(|error| Error::new(error.to_string()))?;
+    let config = Config::resolve_with(None, cli.told.partial())
+        .map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
         Command::Doctor => doctor(&instance),
-        Command::Up { claim, bare } => raise(&instance, config.port, &claim, bare),
+        Command::Up { claim, bare } => raise(&instance, &config, &claim, bare),
         Command::Down => lower(&instance),
-        Command::Divert { seconds } => watch::divert(&instance, seconds),
+        Command::Divert { seconds } => watch::divert(&instance, Span::new(&config.span)?, seconds),
         Command::Resolve {
             subscription,
             cluster,
@@ -222,8 +220,14 @@ fn doctor(instance: &Instance) -> Result<ExitCode, Error> {
     )
 }
 
-fn raise(instance: &Instance, port: u16, claim: &str, bare: bool) -> Result<ExitCode, Error> {
-    let standing = host::establish(instance, port, claim, bare)?;
+fn raise(instance: &Instance, config: &Config, claim: &str, bare: bool) -> Result<ExitCode, Error> {
+    let ground = host::Ground {
+        port: config.port,
+        claim,
+        span: Span::new(&config.span)?,
+        bare,
+    };
+    let standing = host::establish(instance, &ground)?;
     println!(
         "up: reclaimed={} veiled={}",
         standing.cleared.any(),
