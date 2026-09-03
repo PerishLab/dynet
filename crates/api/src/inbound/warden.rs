@@ -25,7 +25,7 @@ struct Post<'a> {
 }
 
 pub fn attend(warren: &Warren, pools: &Pools, span: Duration) -> Result<(), Error> {
-    let socket = UdpSocket::bind(("0.0.0.0", warren.port))
+    let socket = UdpSocket::bind((crate::host::SEAT, warren.port))
         .map_err(|error| Error::new(format!("cannot hold the resolver port: {error}")))?;
     let _ = socket.set_read_timeout(Some(REST));
     let post = Post {

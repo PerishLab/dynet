@@ -49,6 +49,11 @@ are.
   marked traffic to the main table, and the firewall table accepts it before
   the redirect, so the exemption names the traffic and not the account it runs
   under.
+- The captured query is answered from the address the caller wrote to. The
+  firewall table maps it to one fixed local seat and the resolver binds that
+  same seat, so the reply carries the source connection tracking expects and a
+  strict resolver accepts it. Binding to every address lets the kernel choose
+  the source instead, which only a tolerant socket will take.
 - There is no fake address space. DNS answers are real, so the rule matches and
   the cluster is chosen when the name is asked for, and the name is resolved
   through that cluster.

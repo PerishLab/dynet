@@ -1,6 +1,8 @@
 use super::{attempt, run};
 use dynet_core::{Error, Instance};
 
+pub const SEAT: &str = "127.0.0.1";
+
 pub struct Veil;
 
 impl Veil {
@@ -12,7 +14,7 @@ impl Veil {
         let name = instance.get();
         let mark = instance.mark();
         let rules = format!(
-            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n    meta l4proto {{ tcp, udp }} th dport 53 redirect to :{port}\n  }}\n}}\n"
+            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n    meta l4proto {{ tcp, udp }} th dport 53 dnat ip to {SEAT}:{port}\n  }}\n}}\n"
         );
         write(&rules)
     }
