@@ -38,6 +38,10 @@ enum Command {
         bare: bool,
     },
     Down,
+    Divert {
+        #[arg(long, default_value = "60")]
+        seconds: u64,
+    },
     Resolve {
         #[arg(long)]
         subscription: PathBuf,
@@ -140,6 +144,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Doctor => doctor(&instance),
         Command::Up { claim, bare } => raise(&instance, config.port, &claim, bare),
         Command::Down => lower(&instance),
+        Command::Divert { seconds } => watch::divert(&instance, seconds),
         Command::Resolve {
             subscription,
             cluster,

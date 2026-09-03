@@ -159,3 +159,14 @@ pub fn unit(instance: &Instance, errand: &Errand) -> String {
     ]
     .join("\n")
 }
+
+pub fn divert(instance: &Instance, seconds: u64) -> Result<ExitCode, Error> {
+    let told = |line: &str| println!("  {line}");
+    let span = std::time::Duration::from_secs(seconds);
+    let carried = inbound::divert(instance, span, &told)?;
+    println!("carried {carried}");
+    match carried > 0 {
+        true => Ok(ExitCode::SUCCESS),
+        false => Ok(ExitCode::from(1)),
+    }
+}
