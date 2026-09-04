@@ -1,5 +1,6 @@
 mod burrow;
 mod clock;
+mod dart;
 mod divert;
 mod link;
 mod pump;
