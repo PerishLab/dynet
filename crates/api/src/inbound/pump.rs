@@ -147,17 +147,7 @@ impl Loom<'_> {
             return;
         }
         self.swept = since;
-        let Ok(mut router) = warren.router.lock() else {
-            return;
-        };
-        let gone = router.forget(Instant::now());
-        drop(router);
-        for address in &gone {
-            crate::host::Route::release(warren.instance, &address.to_string());
-        }
-        if !gone.is_empty() {
-            (warren.told)(&format!("released {} expired routes", gone.len()));
-        }
+        warren.forget();
     }
 
     fn reap(&mut self, warren: &Warren) {

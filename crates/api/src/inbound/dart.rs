@@ -1,5 +1,6 @@
 use super::IDLE;
 use super::divert::Divert;
+use super::divert::Held;
 use super::link::{Link, Taken};
 use super::warren::{self, Charge, Chosen};
 use dynet_core::{Bearing, Ground, Verdict};
@@ -38,6 +39,11 @@ impl Divert<'_> {
         let Some(held) = self.recall(peer.port()) else {
             return;
         };
+        self.tend(stream, held);
+        self.end(peer.port());
+    }
+
+    fn tend(&self, stream: TcpStream, held: Held) {
         let Some(chosen) = self.choose(held.target, Bearing::Stream) else {
             self.tally(|served| served.refused += 1);
             return;
@@ -104,6 +110,7 @@ impl Divert<'_> {
                     continue;
                 }
                 let Some((link, charge)) = self.open(peer, held) else {
+                    self.end(peer.port());
                     continue;
                 };
                 feed(held, peer.port(), body);
@@ -146,6 +153,7 @@ impl Divert<'_> {
         if let Ok(mut kept) = held.lock() {
             kept.remove(&peer.port());
         }
+        self.end(peer.port());
     }
 
     fn tick(

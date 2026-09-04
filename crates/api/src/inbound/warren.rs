@@ -35,6 +35,20 @@ pub struct Warren<'a> {
 }
 
 impl Warren<'_> {
+    pub fn forget(&self) {
+        let Ok(mut router) = self.router.lock() else {
+            return;
+        };
+        let gone = router.forget(Instant::now());
+        drop(router);
+        for address in &gone {
+            crate::host::Route::release(self.instance, &address.to_string());
+        }
+        if !gone.is_empty() {
+            (self.told)(&format!("released {} expired routes", gone.len()));
+        }
+    }
+
     pub fn passage(&self, pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
         let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
         let label = chosen(pools, wanted, bearing)?;

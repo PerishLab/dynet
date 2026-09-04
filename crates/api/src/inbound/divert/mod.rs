@@ -1,31 +1,27 @@
+mod roll;
+
 use super::pump::{Served, gather, stand};
 use super::warren::{Pools, Warren};
 use dynet_core::{Error, Span};
+pub(super) use roll::Held;
+use roll::Roll;
 use smoltcp::phy::{Device, Medium, RxToken, TunTapInterface, TxToken, wait};
 use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
-use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
 use std::os::fd::AsRawFd;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
-const FIRST: u16 = 20000;
 const REST: Duration = Duration::from_millis(5);
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Held {
-    pub(super) caller: SocketAddrV4,
-    pub(super) target: SocketAddrV4,
-}
+const SWEEP: Duration = Duration::from_secs(30);
 
 pub struct Divert<'a> {
     pub(super) span: Span,
     pub(super) seat: u16,
     pub(super) dart: u16,
-    pub(super) book: Mutex<HashMap<u16, Held>>,
-    pub(super) next: AtomicU16,
+    book: Mutex<Roll>,
+    full: Once,
     pub(super) warren: &'a Warren<'a>,
     pub(super) pools: &'a Pools,
     pub(super) served: Mutex<Served>,
@@ -51,8 +47,8 @@ pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error
         span,
         seat,
         dart,
-        book: Mutex::new(HashMap::new()),
-        next: AtomicU16::new(FIRST),
+        book: Mutex::new(Roll::new()),
+        full: Once::new(),
         warren,
         pools: &pools,
         served: Mutex::new(Served::default()),
@@ -74,7 +70,13 @@ impl Divert<'_> {
         let mut device = TunTapInterface::new(self.warren.instance.get(), Medium::Ip)
             .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
         let started = Instant::now();
+        let mut swept = Duration::ZERO;
         while started.elapsed() < span {
+            let since = started.elapsed();
+            if since >= swept + SWEEP {
+                swept = since;
+                self.glean();
+            }
             let beat =
                 Beat::from_millis(i64::try_from(started.elapsed().as_millis()).unwrap_or_default());
             let held = device.receive(beat);
@@ -117,7 +119,9 @@ impl Divert<'_> {
             caller: SocketAddrV4::new(seen.0, source),
             target: SocketAddrV4::new(seen.1, target),
         };
-        let spare = self.claim(held);
+        let Some(spare) = self.claim(held) else {
+            return false;
+        };
         let seat = match borne {
             true => self.dart,
             false => self.seat,
@@ -142,25 +146,43 @@ impl Divert<'_> {
         true
     }
 
-    fn claim(&self, held: Held) -> u16 {
-        if let Ok(book) = self.book.lock() {
-            for (spare, kept) in book.iter() {
-                if kept.caller == held.caller && kept.target == held.target {
-                    return *spare;
-                }
-            }
+    fn claim(&self, held: Held) -> Option<u16> {
+        let taken = self.book.lock().ok()?.claim(held);
+        let Some((spare, fresh)) = taken else {
+            self.full.call_once(|| {
+                (self.told())("the session roll is full, so new sessions are refused");
+            });
+            self.tally(|served| served.refused += 1);
+            return None;
+        };
+        if fresh {
+            (self.told())(&format!(
+                "{} to {} becomes {}:{spare}",
+                held.caller,
+                held.target,
+                self.span.spare()
+            ));
         }
-        let spare = self.next.fetch_add(1, Ordering::Relaxed);
+        Some(spare)
+    }
+
+    pub(super) fn end(&self, spare: u16) {
         if let Ok(mut book) = self.book.lock() {
-            book.insert(spare, held);
+            book.end(spare);
         }
-        (self.told())(&format!(
-            "{} to {} becomes {}:{spare}",
-            held.caller,
-            held.target,
-            self.span.spare()
-        ));
-        spare
+    }
+
+    fn glean(&self) {
+        self.warren.forget();
+        let Ok(mut book) = self.book.lock() else {
+            return;
+        };
+        let gone = book.reap();
+        let standing = book.standing();
+        drop(book);
+        if gone > 0 {
+            (self.told())(&format!("released {gone} sessions, {standing} standing"));
+        }
     }
 
     pub(super) fn tally(&self, act: impl FnOnce(&mut Served)) {
@@ -174,7 +196,7 @@ impl Divert<'_> {
     }
 
     pub(super) fn recall(&self, spare: u16) -> Option<Held> {
-        self.book.lock().ok()?.get(&spare).copied()
+        self.book.lock().ok()?.recall(spare)
     }
 }
 
