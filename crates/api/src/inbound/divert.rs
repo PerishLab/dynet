@@ -1,18 +1,21 @@
-use dynet_core::{Error, Instance, Span};
+use super::link::Link;
+use super::pump::{Served, gather, stand};
+use super::warren::{self, Charge, Chosen, Pools, Warren};
+use dynet_core::{Bearing, Error, Ground, Span, Verdict};
 use smoltcp::phy::{Device, Medium, RxToken, TunTapInterface, TxToken, wait};
 use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::os::fd::AsRawFd;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 const FIRST: u16 = 20000;
 const REST: Duration = Duration::from_millis(5);
-const BRIEF: Duration = Duration::from_secs(8);
 
 #[derive(Clone, Copy, Debug)]
 struct Held {
@@ -23,19 +26,14 @@ struct Held {
 pub struct Divert<'a> {
     span: Span,
     seat: u16,
-    mark: u32,
     book: Mutex<HashMap<u16, Held>>,
     next: AtomicU16,
-    carried: AtomicUsize,
-    seen: AtomicUsize,
-    told: &'a (dyn Fn(&str) + Sync),
+    warren: &'a Warren<'a>,
+    pools: &'a Pools,
+    served: Mutex<Served>,
 }
 
-pub fn divert(
-    instance: &Instance,
-    ground: (Span, Duration),
-    told: &(dyn Fn(&str) + Sync),
-) -> Result<usize, Error> {
+pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error> {
     let (span, patience) = ground;
     let listener = TcpListener::bind((span.seat(), 0))
         .map_err(|error| Error::new(format!("cannot seat the diverter: {error}")))?;
@@ -43,27 +41,31 @@ pub fn divert(
         .local_addr()
         .map_err(|error| Error::new(format!("cannot read the diverter seat: {error}")))?
         .port();
-    told(&format!("diverting to {}:{seat}", span.seat()));
+    (warren.told)(&format!("diverting to {}:{seat}", span.seat()));
+    let pools = gather(warren, Instant::now())?;
     let divert = Divert {
         span,
         seat,
-        mark: instance.mark(),
         book: Mutex::new(HashMap::new()),
         next: AtomicU16::new(FIRST),
-        carried: AtomicUsize::new(0),
-        seen: AtomicUsize::new(0),
-        told,
+        warren,
+        pools: &pools,
+        served: Mutex::new(Served::default()),
     };
     std::thread::scope(|scope| {
+        scope.spawn(|| stand(warren, &pools, patience));
         scope.spawn(|| divert.greet(&listener));
-        divert.pump(instance, patience)
+        divert.pump(patience)
     })?;
-    Ok(divert.carried.load(Ordering::Relaxed))
+    divert
+        .served
+        .into_inner()
+        .map_err(|_| Error::new("a diverted session died holding the ledger"))
 }
 
 impl Divert<'_> {
-    fn pump(&self, instance: &Instance, span: Duration) -> Result<(), Error> {
-        let mut device = TunTapInterface::new(instance.get(), Medium::Ip)
+    fn pump(&self, span: Duration) -> Result<(), Error> {
+        let mut device = TunTapInterface::new(self.warren.instance.get(), Medium::Ip)
             .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
         let started = Instant::now();
         while started.elapsed() < span {
@@ -75,32 +77,11 @@ impl Divert<'_> {
                 continue;
             };
             let mut carried = taken.consume(<[u8]>::to_vec);
-            self.count(&carried);
             if self.turn(&mut carried) {
                 sending.consume(carried.len(), |room| room.copy_from_slice(&carried));
             }
         }
         Ok(())
-    }
-
-    fn count(&self, body: &[u8]) {
-        let held = self.seen.fetch_add(1, Ordering::Relaxed);
-        if held > 6 {
-            return;
-        }
-        let Ok(packet) = Ipv4Packet::new_checked(body) else {
-            (self.told)(&format!(
-                "packet {held} did not parse, {} bytes",
-                body.len()
-            ));
-            return;
-        };
-        (self.told)(&format!(
-            "packet {held} {:?} {} to {}",
-            packet.next_header(),
-            packet.src_addr(),
-            packet.dst_addr()
-        ));
     }
 
     fn turn(&self, body: &mut [u8]) -> bool {
@@ -159,7 +140,7 @@ impl Divert<'_> {
         if let Ok(mut book) = self.book.lock() {
             book.insert(spare, held);
         }
-        (self.told)(&format!(
+        (self.told())(&format!(
             "{} to {} becomes {}:{spare}",
             held.caller,
             held.target,
@@ -169,14 +150,14 @@ impl Divert<'_> {
     }
 
     fn greet(&self, listener: &TcpListener) {
-        for held in listener.incoming() {
-            let Ok(stream) = held else {
-                continue;
-            };
-            std::thread::scope(|scope| {
+        std::thread::scope(|scope| {
+            for held in listener.incoming() {
+                let Ok(stream) = held else {
+                    continue;
+                };
                 scope.spawn(|| self.serve(stream));
-            });
-        }
+            }
+        });
     }
 
     fn serve(&self, stream: TcpStream) {
@@ -184,43 +165,80 @@ impl Divert<'_> {
             return;
         };
         let Some(held) = self.recall(peer.port()) else {
-            (self.told)(&format!("no session for {peer}"));
             return;
         };
-        (self.told)(&format!(
-            "{} asked for {}, recovered from the table",
-            held.caller, held.target
-        ));
-        match crate::outbound::reach(held.target.into(), self.mark, BRIEF) {
-            Ok(far) => self.carry(stream, far, held),
-            Err(error) => (self.told)(&format!("cannot reach {}: {error}", held.target)),
+        let target = held.target;
+        let Some(chosen) = self.choose(target) else {
+            self.tally(|served| served.refused += 1);
+            return;
+        };
+        (self.told())(&format!("{target} through {}", chosen.told));
+        self.tally(|served| served.accepted += 1);
+        let link = Link::open(chosen.passage, target.ip().to_string(), target.port());
+        self.carry(stream, link, &chosen.charge);
+    }
+
+    fn choose(&self, target: SocketAddrV4) -> Option<Chosen> {
+        let router = self.warren.router.lock().ok()?;
+        let decision = router.reached(IpAddr::V4(*target.ip()), Instant::now());
+        drop(router);
+        if decision.ground() == Ground::Named {
+            self.tally(|served| served.named += 1);
         }
+        self.warren
+            .passage(self.pools, decision.cluster(), Bearing::Stream)
+    }
+
+    fn carry(&self, near: TcpStream, mut link: Link, charge: &Charge) {
+        let Ok(again) = near.try_clone() else {
+            return;
+        };
+        let sending = link.upward();
+        std::thread::scope(|scope| {
+            scope.spawn(|| push(again, sending));
+            drain(near, &link);
+        });
+        let Some(verdict) = link.verdict() else {
+            return;
+        };
+        warren::observed(self.pools, charge, verdict);
+        (self.told())(&format!("verdict {verdict:?}"));
+        match matches!(verdict, Verdict::Faulted(_)) {
+            true => self.tally(|served| served.faulted += 1),
+            false => self.tally(|served| served.answered += 1),
+        }
+    }
+
+    fn tally(&self, act: impl FnOnce(&mut Served)) {
+        if let Ok(mut served) = self.served.lock() {
+            act(&mut served);
+        }
+    }
+
+    fn told(&self) -> &(dyn Fn(&str) + Sync) {
+        self.warren.told
     }
 
     fn recall(&self, spare: u16) -> Option<Held> {
         self.book.lock().ok()?.get(&spare).copied()
     }
+}
 
-    fn carry(&self, near: TcpStream, far: TcpStream, held: Held) {
-        let Ok(back) = far.try_clone() else {
-            return;
-        };
-        let Ok(again) = near.try_clone() else {
-            return;
-        };
-        std::thread::scope(|scope| {
-            scope.spawn(|| shuttle(near, far));
-            shuttle(back, again);
-        });
-        self.carried.fetch_add(1, Ordering::Relaxed);
-        (self.told)(&format!("{} carried to {}", held.caller, held.target));
+fn push(mut from: TcpStream, sending: Option<Sender<Vec<u8>>>) {
+    let Some(sending) = sending else {
+        return;
+    };
+    let mut room = [0u8; 16384];
+    while let Ok(size) = from.read(&mut room) {
+        if size == 0 || sending.send(room[..size].to_vec()).is_err() {
+            break;
+        }
     }
 }
 
-fn shuttle(mut from: TcpStream, mut into: TcpStream) {
-    let mut room = [0u8; 16384];
-    while let Ok(size) = from.read(&mut room) {
-        if size == 0 || into.write_all(&room[..size]).is_err() {
+fn drain(mut into: TcpStream, link: &Link) {
+    while let Some(body) = link.wait() {
+        if into.write_all(&body).is_err() {
             break;
         }
     }

@@ -3,26 +3,61 @@ use dynet_core::{Domain, Error, Instance, Name, Range, Router, Rule, Span, Subje
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[derive(clap::Args)]
 pub struct Errand {
+    #[arg(long)]
     pub subscription: PathBuf,
+    #[arg(long)]
     pub clusters: PathBuf,
+    #[arg(long)]
     pub cluster: String,
+    #[arg(long, default_value = "80")]
     pub ports: String,
+    #[arg(long, default_value = "1.1.1.1")]
     pub upstream: String,
+    #[arg(long, default_value = "0.0.0.0/0")]
     pub claim: String,
+    #[arg(long)]
     pub bare: bool,
+    #[arg(long)]
     pub unit: bool,
+    #[arg(long, default_value = "")]
     pub holds: String,
-    pub port: u16,
-    pub seconds: u64,
+    #[arg(long)]
     pub name: String,
+    #[arg(long, default_value = "30")]
+    pub seconds: u64,
 }
 
-pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> {
-    if errand.unit {
-        print!("{}", unit(instance, errand));
+pub struct Stage<'a> {
+    pub errand: &'a Errand,
+    pub port: u16,
+    pub span: Span,
+}
+
+pub fn forward(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
+    if stage.errand.unit {
+        print!("{}", unit(instance.get(), stage.errand));
         return Ok(ExitCode::SUCCESS);
     }
+    let span = std::time::Duration::from_secs(stage.errand.seconds);
+    let served = staged(instance, stage, |warren| inbound::serve(warren, span))?;
+    Ok(recount(&served))
+}
+
+pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
+    let patience = std::time::Duration::from_secs(stage.errand.seconds);
+    let ground = (stage.span, patience);
+    let served = staged(instance, stage, |warren| inbound::divert(warren, ground))?;
+    Ok(recount(&served))
+}
+
+fn staged<T>(
+    instance: &Instance,
+    stage: &Stage,
+    act: impl FnOnce(&inbound::Warren) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let errand = stage.errand;
     let text = std::fs::read_to_string(&errand.subscription).map_err(|error| {
         Error::new(format!(
             "cannot read {}: {error}",
@@ -43,21 +78,7 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         .iter()
         .find(|item| item.name().get() == errand.cluster)
         .ok_or_else(|| Error::new(format!("no cluster named {}", errand.cluster)))?;
-    let mut rules = Vec::new();
-    for name in split(&errand.name) {
-        rules.push(Rule::new(
-            Subject::Suffix(Domain::new(name)?),
-            wanted.name().clone(),
-        ));
-    }
-    for held in split(&errand.holds) {
-        rules.push(Rule::new(
-            Subject::Holds(span(held)?),
-            wanted.name().clone(),
-        ));
-    }
-    let table = Table::new(rules, Name::new("direct")?);
-    let router = std::sync::Mutex::new(Router::new(table));
+    let router = std::sync::Mutex::new(Router::new(ruled(errand, wanted.name())?));
     let told = |line: &str| println!("  {line}");
     let warren = inbound::Warren {
         instance,
@@ -65,14 +86,27 @@ pub fn forward(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> 
         clusters: held.clusters(),
         router: &router,
         ports: &listed(&errand.ports)?,
-        port: errand.port,
+        port: stage.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(instance.mark()),
         store: &inbound::Store::new(),
         told: &told,
     };
-    let served = inbound::serve(&warren, std::time::Duration::from_secs(errand.seconds))?;
-    Ok(recount(&served))
+    act(&warren)
+}
+
+fn ruled(errand: &Errand, wanted: &Name) -> Result<Table, Error> {
+    let mut rules = Vec::new();
+    for name in split(&errand.name) {
+        rules.push(Rule::new(
+            Subject::Suffix(Domain::new(name)?),
+            wanted.clone(),
+        ));
+    }
+    for held in split(&errand.holds) {
+        rules.push(Rule::new(Subject::Holds(span(held)?), wanted.clone()));
+    }
+    Ok(Table::new(rules, Name::new("direct")?))
 }
 
 pub fn listed(ports: &str) -> Result<Vec<u16>, Error> {
@@ -118,8 +152,7 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
     }
 }
 
-pub fn unit(instance: &Instance, errand: &Errand) -> String {
-    let name = instance.get();
+pub fn unit(name: &str, errand: &Errand) -> String {
     let bare = match errand.bare {
         true => " --bare",
         false => "",
@@ -158,15 +191,4 @@ pub fn unit(instance: &Instance, errand: &Errand) -> String {
         String::new(),
     ]
     .join("\n")
-}
-
-pub fn divert(instance: &Instance, span: Span, seconds: u64) -> Result<ExitCode, Error> {
-    let told = |line: &str| println!("  {line}");
-    let patience = std::time::Duration::from_secs(seconds);
-    let carried = inbound::divert(instance, (span, patience), &told)?;
-    println!("carried {carried}");
-    match carried > 0 {
-        true => Ok(ExitCode::SUCCESS),
-        false => Ok(ExitCode::from(1)),
-    }
 }

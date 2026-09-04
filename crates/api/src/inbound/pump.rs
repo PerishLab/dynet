@@ -89,7 +89,7 @@ pub fn serve(warren: &Warren, span: Duration) -> Result<Served, Error> {
     }))
 }
 
-fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
+pub(super) fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
     let policy = Policy::new(HALF, FLOOR)?;
     let mut pools = Pools::new();
     for cluster in warren.clusters {
@@ -99,7 +99,7 @@ fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
     Ok(pools)
 }
 
-fn stand(warren: &Warren, pools: &Pools, span: Duration) {
+pub(super) fn stand(warren: &Warren, pools: &Pools, span: Duration) {
     let Err(error) = warden::attend(warren, pools, span) else {
         return;
     };

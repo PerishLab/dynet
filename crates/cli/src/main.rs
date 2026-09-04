@@ -38,10 +38,7 @@ enum Command {
         bare: bool,
     },
     Down,
-    Divert {
-        #[arg(long, default_value = "60")]
-        seconds: u64,
-    },
+    Divert(watch::Errand),
     Resolve {
         #[arg(long)]
         subscription: PathBuf,
@@ -78,30 +75,7 @@ enum Command {
         #[arg(long, default_value = "api.ipify.org")]
         target: String,
     },
-    Forward {
-        #[arg(long)]
-        subscription: PathBuf,
-        #[arg(long)]
-        clusters: PathBuf,
-        #[arg(long)]
-        cluster: String,
-        #[arg(long)]
-        claim: String,
-        #[arg(long, default_value = "80")]
-        ports: String,
-        #[arg(long, default_value = "1.1.1.1")]
-        upstream: String,
-        #[arg(long)]
-        bare: bool,
-        #[arg(long)]
-        unit: bool,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        holds: String,
-        #[arg(long, default_value = "30")]
-        seconds: u64,
-    },
+    Forward(watch::Errand),
 }
 
 #[derive(Debug, Cascade)]
@@ -142,7 +116,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Doctor => doctor(&instance),
         Command::Up { claim, bare } => raise(&instance, &config, &claim, bare),
         Command::Down => lower(&instance),
-        Command::Divert { seconds } => watch::divert(&instance, Span::new(&config.span)?, seconds),
+        Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Resolve {
             subscription,
             cluster,
@@ -165,36 +139,16 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             secret,
             target,
         } => node::exit(&seat, &secret, &target),
-        Command::Forward {
-            subscription,
-            clusters,
-            cluster,
-            claim,
-            ports,
-            upstream,
-            bare,
-            unit,
-            name,
-            holds,
-            seconds,
-        } => watch::forward(
-            &instance,
-            &watch::Errand {
-                subscription,
-                clusters,
-                cluster,
-                ports,
-                upstream,
-                claim,
-                bare,
-                unit,
-                holds,
-                port: config.port,
-                seconds,
-                name,
-            },
-        ),
+        Command::Forward(errand) => watch::forward(&instance, &staged(&config, &errand)?),
     }
+}
+
+fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage<'a>, Error> {
+    Ok(watch::Stage {
+        errand,
+        port: config.port,
+        span: Span::new(&config.span)?,
+    })
 }
 
 fn doctor(instance: &Instance) -> Result<ExitCode, Error> {

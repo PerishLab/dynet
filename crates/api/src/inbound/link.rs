@@ -58,6 +58,14 @@ impl Link {
         upward.send(body.to_vec()).is_ok()
     }
 
+    pub fn wait(&self) -> Option<Vec<u8>> {
+        self.downward.recv().ok()
+    }
+
+    pub fn upward(&mut self) -> Option<Sender<Vec<u8>>> {
+        self.upward.take()
+    }
+
     pub fn take(&mut self) -> Taken {
         match self.downward.try_recv() {
             Ok(body) => Taken::Body(body),
