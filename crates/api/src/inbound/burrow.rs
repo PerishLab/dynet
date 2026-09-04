@@ -1,3 +1,4 @@
+use super::IDLE;
 use super::link::{Link, Taken};
 use super::pump::Served;
 use super::warren::{self, Charge, Pools, Warren};
@@ -6,11 +7,10 @@ use smoltcp::iface::{SocketHandle as Seat, SocketSet};
 use smoltcp::socket::udp;
 use smoltcp::wire::{IpEndpoint, IpListenEndpoint};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 const ROOM: usize = 2097152;
 const DEPTH: usize = 1024;
-const IDLE: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Tuple {

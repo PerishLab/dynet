@@ -1,5 +1,6 @@
+use super::IDLE;
 use super::divert::Divert;
-use super::link::Link;
+use super::link::{Link, Taken};
 use super::warren::{self, Charge, Chosen};
 use dynet_core::{Bearing, Ground, Verdict};
 use std::collections::HashMap;
@@ -7,11 +8,16 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
 use std::sync::Mutex;
 use std::sync::mpsc::Sender;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const ROOM: usize = 65536;
 
-type Flock = Mutex<HashMap<u16, Sender<Vec<u8>>>>;
+struct Perch {
+    sending: Sender<Vec<u8>>,
+    touched: Instant,
+}
+
+type Flock = Mutex<HashMap<u16, Perch>>;
 
 impl Divert<'_> {
     pub(super) fn greet(&self, listener: &TcpListener) {
@@ -93,23 +99,14 @@ impl Divert<'_> {
         let mut room = [0u8; ROOM];
         std::thread::scope(|scope| {
             while let Ok((size, peer)) = darts.recv_from(&mut room) {
-                let body = room[..size].to_vec();
-                if let Some(sending) = held
-                    .lock()
-                    .ok()
-                    .and_then(|kept| kept.get(&peer.port()).cloned())
-                {
-                    let _ = sending.send(body);
+                let body = &room[..size];
+                if feed(held, peer.port(), body) {
                     continue;
                 }
                 let Some((link, charge)) = self.open(peer, held) else {
                     continue;
                 };
-                let _ = held
-                    .lock()
-                    .ok()
-                    .and_then(|kept| kept.get(&peer.port()).cloned())
-                    .map(|sending| sending.send(body));
+                feed(held, peer.port(), body);
                 scope.spawn(move || self.spill(link, charge, (darts, peer, held)));
             }
         });
@@ -128,21 +125,20 @@ impl Divert<'_> {
             kept.target.port(),
         );
         let sending = link.upward()?;
-        held.lock().ok()?.insert(peer.port(), sending);
+        let perch = Perch {
+            sending,
+            touched: Instant::now(),
+        };
+        held.lock().ok()?.insert(peer.port(), perch);
         Some((link, chosen.charge))
     }
 
     fn spill(&self, link: Link, charge: Charge, seat: (&UdpSocket, SocketAddr, &Flock)) {
-        let (darts, peer, held) = seat;
+        let (_, peer, held) = seat;
         let mut borne = false;
-        while let Some(body) = link.wait() {
-            if !borne {
-                borne = true;
-                self.answer(&charge);
-            }
-            if darts.send_to(&body, peer).is_err() {
-                break;
-            }
+        let mut patience = IDLE;
+        while let Some(next) = self.tick(&link, patience, seat, (&charge, &mut borne)) {
+            patience = next;
         }
         if !borne {
             self.judge(&link, &charge);
@@ -152,11 +148,83 @@ impl Divert<'_> {
         }
     }
 
+    fn tick(
+        &self,
+        link: &Link,
+        patience: Duration,
+        seat: (&UdpSocket, SocketAddr, &Flock),
+        told: (&Charge, &mut bool),
+    ) -> Option<Duration> {
+        let (darts, peer, held) = seat;
+        let (charge, borne) = told;
+        match link.bide(patience) {
+            Taken::Body(body) => self.pour(&body, (darts, peer), charge, borne).then(|| {
+                touch(held, peer.port());
+                IDLE
+            }),
+            Taken::Spent => None,
+            Taken::Empty => self.rest(held, peer),
+        }
+    }
+
+    fn rest(&self, held: &Flock, peer: SocketAddr) -> Option<Duration> {
+        let Some(left) = shed(held, peer.port()) else {
+            (self.told())(&format!("{peer} dropped after {}s quiet", IDLE.as_secs()));
+            return None;
+        };
+        Some(left)
+    }
+
+    fn pour(
+        &self,
+        body: &[u8],
+        seat: (&UdpSocket, SocketAddr),
+        charge: &Charge,
+        borne: &mut bool,
+    ) -> bool {
+        if !*borne {
+            *borne = true;
+            self.answer(charge);
+        }
+        seat.0.send_to(body, seat.1).is_ok()
+    }
+
     fn answer(&self, charge: &Charge) {
         warren::observed(self.pools, charge, Verdict::Answered);
         (self.told())("answered");
         self.tally(|served| served.answered += 1);
     }
+}
+
+fn feed(held: &Flock, port: u16, body: &[u8]) -> bool {
+    let Ok(mut kept) = held.lock() else {
+        return false;
+    };
+    let Some(perch) = kept.get_mut(&port) else {
+        return false;
+    };
+    perch.touched = Instant::now();
+    perch.sending.send(body.to_vec()).is_ok()
+}
+
+fn touch(held: &Flock, port: u16) {
+    let Ok(mut kept) = held.lock() else {
+        return;
+    };
+    let Some(perch) = kept.get_mut(&port) else {
+        return;
+    };
+    perch.touched = Instant::now();
+}
+
+fn shed(held: &Flock, port: u16) -> Option<Duration> {
+    let mut kept = held.lock().ok()?;
+    let spent = kept.get(&port)?.touched.elapsed();
+    if spent >= IDLE {
+        kept.remove(&port);
+        return None;
+    }
+    Some(IDLE - spent)
 }
 
 fn push(mut from: TcpStream, sending: Option<Sender<Vec<u8>>>) {

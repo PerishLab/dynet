@@ -1,7 +1,8 @@
 use crate::outbound::{Listener, Passage, Speaker};
 use dynet_core::{Fault, Verdict};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::thread;
+use std::time::Duration;
 
 struct Errand {
     passage: Passage,
@@ -60,6 +61,14 @@ impl Link {
 
     pub fn wait(&self) -> Option<Vec<u8>> {
         self.downward.recv().ok()
+    }
+
+    pub fn bide(&self, patience: Duration) -> Taken {
+        match self.downward.recv_timeout(patience) {
+            Ok(body) => Taken::Body(body),
+            Err(RecvTimeoutError::Timeout) => Taken::Empty,
+            Err(RecvTimeoutError::Disconnected) => Taken::Spent,
+        }
     }
 
     pub fn upward(&mut self) -> Option<Sender<Vec<u8>>> {
