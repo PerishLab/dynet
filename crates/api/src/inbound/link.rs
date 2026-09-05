@@ -52,13 +52,6 @@ impl Link {
         }
     }
 
-    pub fn offer(&mut self, body: &[u8]) -> bool {
-        let Some(upward) = self.upward.as_ref() else {
-            return false;
-        };
-        upward.send(body.to_vec()).is_ok()
-    }
-
     pub fn wait(&self) -> Option<Vec<u8>> {
         self.downward.recv().ok()
     }

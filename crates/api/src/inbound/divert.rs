@@ -1,7 +1,6 @@
 mod roll;
 
-use super::pump::{Served, gather, stand};
-use super::warren::{Pools, Warren};
+use super::warren::{Pools, Served, Warren, gather, stand};
 use dynet_core::{Error, Span};
 pub(super) use roll::Held;
 use roll::Roll;

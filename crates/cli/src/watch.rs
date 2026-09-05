@@ -11,8 +11,6 @@ pub struct Errand {
     pub clusters: PathBuf,
     #[arg(long)]
     pub cluster: String,
-    #[arg(long, default_value = "80")]
-    pub ports: String,
     #[arg(long, default_value = "1.1.1.1")]
     pub upstream: String,
     #[arg(long, default_value = "0.0.0.0/0")]
@@ -35,17 +33,11 @@ pub struct Stage<'a> {
     pub span: Span,
 }
 
-pub fn forward(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
+pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     if stage.errand.unit {
         print!("{}", unit(instance.get(), stage.errand));
         return Ok(ExitCode::SUCCESS);
     }
-    let span = std::time::Duration::from_secs(stage.errand.seconds);
-    let served = staged(instance, stage, |warren| inbound::serve(warren, span))?;
-    Ok(recount(&served))
-}
-
-pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     let patience = std::time::Duration::from_secs(stage.errand.seconds);
     let ground = (stage.span, patience);
     let served = staged(instance, stage, |warren| inbound::divert(warren, ground))?;
@@ -85,7 +77,6 @@ fn staged<T>(
         entries: &entries,
         clusters: held.clusters(),
         router: &router,
-        ports: &listed(&errand.ports)?,
         port: stage.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(instance.mark()),
@@ -107,17 +98,6 @@ fn ruled(errand: &Errand, wanted: &Name) -> Result<Table, Error> {
         rules.push(Rule::new(Subject::Holds(span(held)?), wanted.clone()));
     }
     Ok(Table::new(rules, Name::new("direct")?))
-}
-
-pub fn listed(ports: &str) -> Result<Vec<u16>, Error> {
-    ports
-        .split(',')
-        .map(|item| {
-            item.trim()
-                .parse()
-                .map_err(|_| Error::new(format!("{item} is not a port")))
-        })
-        .collect()
 }
 
 pub fn split(listed: &str) -> Vec<&str> {
@@ -158,12 +138,11 @@ pub fn unit(name: &str, errand: &Errand) -> String {
         false => "",
     };
     let run = format!(
-        "/usr/local/bin/dynet --instance {name} forward --subscription {} --clusters {} --cluster {} --claim {} --ports {} --upstream {} --name {} --seconds 0",
+        "/usr/local/bin/dynet --instance {name} divert --subscription {} --clusters {} --cluster {} --claim {} --upstream {} --name {} --seconds 0",
         errand.subscription.display(),
         errand.clusters.display(),
         errand.cluster,
         errand.claim,
-        errand.ports,
         errand.upstream,
         errand.name,
     );

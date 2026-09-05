@@ -1,12 +1,27 @@
 use super::store::Store;
+use super::warden;
 use crate::outbound::{Book, Passage, Roster};
 use crate::subscription::Entry;
-use dynet_core::{Bearing, Cluster, Instance, Label, Name, Router, Selector, Verdict};
+use dynet_core::{
+    Bearing, Cluster, Error, Instance, Label, Name, Policy, Router, Selector, Verdict,
+};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
+
+const HALF: Duration = Duration::from_secs(600);
+const FLOOR: f64 = 0.05;
+
+#[derive(Debug, Default)]
+pub struct Served {
+    pub accepted: usize,
+    pub answered: usize,
+    pub faulted: usize,
+    pub named: usize,
+    pub refused: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct Charge {
@@ -26,7 +41,6 @@ pub struct Warren<'a> {
     pub entries: &'a [Entry],
     pub clusters: &'a [Cluster],
     pub router: &'a Mutex<Router>,
-    pub ports: &'a [u16],
     pub port: u16,
     pub upstream: &'a str,
     pub book: &'a Book,
@@ -107,4 +121,21 @@ fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
         .lock()
         .ok()?
         .choose(bearing, Instant::now())
+}
+
+pub fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
+    let policy = Policy::new(HALF, FLOOR)?;
+    let mut pools = Pools::new();
+    for cluster in warren.clusters {
+        let selector = Selector::new(cluster, policy, started);
+        pools.insert(cluster.name().clone(), Mutex::new(selector));
+    }
+    Ok(pools)
+}
+
+pub fn stand(warren: &Warren, pools: &Pools, span: Duration) {
+    let Err(error) = warden::attend(warren, pools, span) else {
+        return;
+    };
+    (warren.told)(&format!("the resolver refused to start: {error}"));
 }

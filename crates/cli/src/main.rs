@@ -75,7 +75,6 @@ enum Command {
         #[arg(long, default_value = "api.ipify.org")]
         target: String,
     },
-    Forward(watch::Errand),
 }
 
 #[derive(Debug, Cascade)]
@@ -139,7 +138,6 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             secret,
             target,
         } => node::exit(&seat, &secret, &target),
-        Command::Forward(errand) => watch::forward(&instance, &staged(&config, &errand)?),
     }
 }
 

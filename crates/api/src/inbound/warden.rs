@@ -1,4 +1,3 @@
-use super::clock::lasting;
 use super::store::{Key, Recall};
 use super::warren::{self, Chosen, Pools, Warren};
 use crate::host::Route;
@@ -224,4 +223,8 @@ fn gather(listener: &mut Listener) -> Result<Vec<u8>, Error> {
         return Err(Error::new("the upstream answered nothing"));
     }
     Ok(framed)
+}
+
+fn lasting(started: Instant, span: Duration) -> bool {
+    span.is_zero() || started.elapsed() < span
 }
