@@ -21,7 +21,7 @@ pub struct Errand {
     pub unit: bool,
     #[arg(long, default_value = "")]
     pub holds: String,
-    #[arg(long)]
+    #[arg(long, default_value = "")]
     pub name: String,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
@@ -137,20 +137,30 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
     }
 }
 
+fn told(name: &str, errand: &Errand) -> String {
+    let mut parts = vec![
+        format!("/usr/local/bin/dynet --instance {name} divert"),
+        format!("--subscription {}", errand.subscription.display()),
+        format!("--clusters {}", errand.clusters.display()),
+        format!("--cluster {}", errand.cluster),
+        format!("--claim {}", errand.claim),
+        format!("--upstream {}", errand.upstream),
+    ];
+    for (flag, value) in [("--name", &errand.name), ("--holds", &errand.holds)] {
+        if !value.is_empty() {
+            parts.push(format!("{flag} {value}"));
+        }
+    }
+    parts.push("--seconds 0".to_string());
+    parts.join(" ")
+}
+
 pub fn unit(name: &str, errand: &Errand) -> String {
     let bare = match errand.bare {
         true => " --bare",
         false => "",
     };
-    let run = format!(
-        "/usr/local/bin/dynet --instance {name} divert --subscription {} --clusters {} --cluster {} --claim {} --upstream {} --name {} --seconds 0",
-        errand.subscription.display(),
-        errand.clusters.display(),
-        errand.cluster,
-        errand.claim,
-        errand.upstream,
-        errand.name,
-    );
+    let run = told(name, errand);
     [
         "[Unit]".to_string(),
         format!("Description=Dynet on {name}"),
