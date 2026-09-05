@@ -14,7 +14,8 @@ use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SALT: &[u8] = b"c48619fe-8f02-49e0-b9e9-edf763e17e21";
-const BRIEF: Duration = Duration::from_secs(8);
+const NEAR: Duration = Duration::from_secs(1);
+const BRIEF: Duration = Duration::from_secs(4);
 const PATIENT: Duration = Duration::from_secs(20);
 const SECURITY: u8 = 0x03;
 const OPTION: u8 = 0x01;
@@ -75,7 +76,7 @@ impl Tunnel {
 
     pub fn dial(endpoint: &Endpoint) -> Result<Self, Error> {
         let seat = endpoint.seat()?;
-        let stream = crate::outbound::reach(seat, endpoint.mark, BRIEF)?;
+        let stream = crate::outbound::reach(seat, endpoint.mark, NEAR)?;
         stream
             .set_read_timeout(Some(BRIEF))
             .and_then(|()| stream.set_write_timeout(Some(PATIENT)))

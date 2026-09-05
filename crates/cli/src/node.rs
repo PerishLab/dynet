@@ -4,6 +4,7 @@ use dynet_api::{catalog, resolver, subscription};
 use dynet_core::{Domain, Error, Name, Router, Rule, Subject, Table};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::{Duration, Instant};
 
 const LOOSE: u32 = 0;
 
@@ -25,11 +26,20 @@ pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Er
         .collect();
     let mut failures = 0;
     for (index, label) in labels.iter().enumerate() {
+        let began = Instant::now();
         match visit(&entries, label) {
-            Ok(egress) => println!("{cluster}[{index}]: {egress}"),
+            Ok(seen) => println!(
+                "{cluster}[{index}]: {} opened {}ms whole {}ms",
+                seen.egress,
+                seen.opened.as_millis(),
+                seen.whole.as_millis()
+            ),
             Err(error) => {
                 failures += 1;
-                println!("{cluster}[{index}]: refused: {error}");
+                println!(
+                    "{cluster}[{index}]: refused after {}ms: {error}",
+                    began.elapsed().as_millis()
+                );
             }
         }
     }
@@ -104,7 +114,14 @@ pub fn board(
     Tunnel::open(&endpoint, host, port)
 }
 
-pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<String, Error> {
+pub struct Visit {
+    pub egress: String,
+    pub opened: Duration,
+    pub whole: Duration,
+}
+
+pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<Visit, Error> {
+    let began = Instant::now();
     let entry = entries
         .iter()
         .find(|item| item.field("name") == Some(label))
@@ -121,6 +138,7 @@ pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<String, Err
         .ok_or_else(|| Error::new("no identity"))?;
     let endpoint = Endpoint::new(host, port, uuid, LOOSE)?;
     let mut tunnel = Tunnel::open(&endpoint, "api.ipify.org", 80)?;
+    let opened = began.elapsed();
     tunnel
         .send(b"GET /?format=text HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")?;
     let mut answer = Vec::new();
@@ -134,12 +152,16 @@ pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<String, Err
     if !text.starts_with("HTTP/1.1 200") {
         return Err(Error::new(format!("no answer: {:.60}", text)));
     }
-    Ok(text
-        .rsplit("\r\n\r\n")
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_string())
+    Ok(Visit {
+        egress: text
+            .rsplit("\r\n\r\n")
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+        opened,
+        whole: began.elapsed(),
+    })
 }
 
 pub struct Aim {
