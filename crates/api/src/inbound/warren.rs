@@ -21,6 +21,7 @@ pub struct Served {
     pub faulted: usize,
     pub named: usize,
     pub refused: usize,
+    pub dropped: usize,
 }
 
 #[derive(Clone, Debug)]

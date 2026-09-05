@@ -8,13 +8,20 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
 use std::sync::Mutex;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::TrySendError;
 use std::time::{Duration, Instant};
 
 const ROOM: usize = 65536;
 
+enum Fed {
+    Away,
+    Full,
+    Gone,
+}
+
 struct Perch {
-    sending: Sender<Vec<u8>>,
+    sending: SyncSender<Vec<u8>>,
     touched: Instant,
 }
 
@@ -106,7 +113,7 @@ impl Divert<'_> {
         std::thread::scope(|scope| {
             while let Ok((size, peer)) = darts.recv_from(&mut room) {
                 let body = &room[..size];
-                if feed(held, peer.port(), body) {
+                if self.fed(held, peer.port(), body) {
                     continue;
                 }
                 let Some((link, charge)) = self.open(peer, held) else {
@@ -117,6 +124,17 @@ impl Divert<'_> {
                 scope.spawn(move || self.spill(link, charge, (darts, peer, held)));
             }
         });
+    }
+
+    fn fed(&self, held: &Flock, port: u16, body: &[u8]) -> bool {
+        match feed(held, port, body) {
+            Fed::Away => true,
+            Fed::Full => {
+                self.tally(|served| served.dropped += 1);
+                true
+            }
+            Fed::Gone => false,
+        }
     }
 
     fn open(&self, peer: SocketAddr, held: &Flock) -> Option<(Link, Charge)> {
@@ -204,15 +222,19 @@ impl Divert<'_> {
     }
 }
 
-fn feed(held: &Flock, port: u16, body: &[u8]) -> bool {
+fn feed(held: &Flock, port: u16, body: &[u8]) -> Fed {
     let Ok(mut kept) = held.lock() else {
-        return false;
+        return Fed::Gone;
     };
     let Some(perch) = kept.get_mut(&port) else {
-        return false;
+        return Fed::Gone;
     };
     perch.touched = Instant::now();
-    perch.sending.send(body.to_vec()).is_ok()
+    match perch.sending.try_send(body.to_vec()) {
+        Ok(()) => Fed::Away,
+        Err(TrySendError::Full(_)) => Fed::Full,
+        Err(TrySendError::Disconnected(_)) => Fed::Gone,
+    }
 }
 
 fn touch(held: &Flock, port: u16) {
@@ -235,7 +257,7 @@ fn shed(held: &Flock, port: u16) -> Option<Duration> {
     Some(IDLE - spent)
 }
 
-fn push(mut from: TcpStream, sending: Option<Sender<Vec<u8>>>) {
+fn push(mut from: TcpStream, sending: Option<SyncSender<Vec<u8>>>) {
     let Some(sending) = sending else {
         return;
     };

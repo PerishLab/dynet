@@ -1,8 +1,10 @@
 use crate::outbound::{Listener, Passage, Speaker};
 use dynet_core::{Fault, Verdict};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel, sync_channel};
 use std::thread;
 use std::time::Duration;
+
+pub const DEPTH: usize = 4;
 
 struct Errand {
     passage: Passage,
@@ -19,7 +21,7 @@ pub enum Taken {
 }
 
 pub struct Link {
-    upward: Option<Sender<Vec<u8>>>,
+    upward: Option<SyncSender<Vec<u8>>>,
     downward: Receiver<Vec<u8>>,
     told: Receiver<Verdict>,
 }
@@ -34,8 +36,8 @@ impl Link {
     }
 
     fn start(passage: Passage, target: String, port: u16, bearing: bool) -> Self {
-        let (upward, outgoing) = channel();
-        let (incoming, downward) = channel();
+        let (upward, outgoing) = sync_channel(DEPTH);
+        let (incoming, downward) = sync_channel(DEPTH);
         let (spoken, told) = channel();
         let errand = Errand {
             passage,
@@ -64,20 +66,8 @@ impl Link {
         }
     }
 
-    pub fn upward(&mut self) -> Option<Sender<Vec<u8>>> {
+    pub fn upward(&mut self) -> Option<SyncSender<Vec<u8>>> {
         self.upward.take()
-    }
-
-    pub fn take(&mut self) -> Taken {
-        match self.downward.try_recv() {
-            Ok(body) => Taken::Body(body),
-            Err(TryRecvError::Empty) => Taken::Empty,
-            Err(TryRecvError::Disconnected) => Taken::Spent,
-        }
-    }
-
-    pub fn hush(&mut self) {
-        self.upward = None;
     }
 
     pub fn verdict(&self) -> Option<Verdict> {
@@ -85,7 +75,7 @@ impl Link {
     }
 }
 
-fn carry(errand: Errand, outgoing: Receiver<Vec<u8>>, incoming: Sender<Vec<u8>>) {
+fn carry(errand: Errand, outgoing: Receiver<Vec<u8>>, incoming: SyncSender<Vec<u8>>) {
     let (egress, ingress) = match reach(&errand) {
         Err(fault) => {
             let _ = errand.told.send(Verdict::Faulted(fault));
@@ -116,7 +106,7 @@ fn push(mut egress: Speaker, outgoing: Receiver<Vec<u8>>) {
     let _ = egress.done();
 }
 
-fn pull(mut ingress: Listener, incoming: &Sender<Vec<u8>>) -> Verdict {
+fn pull(mut ingress: Listener, incoming: &SyncSender<Vec<u8>>) -> Verdict {
     let mut answered = false;
     let mut fault = Fault::Silent;
     loop {

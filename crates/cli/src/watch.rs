@@ -123,8 +123,13 @@ pub fn span(claim: &str) -> Result<Range, Error> {
 
 pub fn recount(served: &inbound::Served) -> ExitCode {
     println!(
-        "accepted {}, answered {}, faulted {}, named {}, refused {}",
-        served.accepted, served.answered, served.faulted, served.named, served.refused
+        "accepted {}, answered {}, faulted {}, named {}, refused {}, dropped {}",
+        served.accepted,
+        served.answered,
+        served.faulted,
+        served.named,
+        served.refused,
+        served.dropped
     );
     match served.accepted > 0 && served.faulted == 0 && served.named > 0 {
         true => ExitCode::SUCCESS,
