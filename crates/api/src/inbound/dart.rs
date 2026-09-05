@@ -13,6 +13,7 @@ use std::sync::mpsc::TrySendError;
 use std::time::{Duration, Instant};
 
 const ROOM: usize = 65536;
+const REST: Duration = Duration::from_millis(5);
 
 enum Fed {
     Away,
@@ -29,11 +30,14 @@ type Flock = Mutex<HashMap<u16, Perch>>;
 
 impl Divert<'_> {
     pub(super) fn greet(&self, listener: &TcpListener) {
+        let _ = listener.set_nonblocking(true);
         std::thread::scope(|scope| {
-            for held in listener.incoming() {
-                let Ok(stream) = held else {
+            while !self.spent() {
+                let Ok((stream, _)) = listener.accept() else {
+                    std::thread::sleep(REST);
                     continue;
                 };
+                let _ = stream.set_nonblocking(false);
                 scope.spawn(|| self.serve(stream));
             }
         });
@@ -107,11 +111,15 @@ impl Divert<'_> {
     }
 
     pub(super) fn flock(&self, darts: &UdpSocket) {
+        let _ = darts.set_read_timeout(Some(REST));
         let flock: Flock = Mutex::new(HashMap::new());
         let held = &flock;
         let mut room = [0u8; ROOM];
         std::thread::scope(|scope| {
-            while let Ok((size, peer)) = darts.recv_from(&mut room) {
+            while !self.spent() {
+                let Ok((size, peer)) = darts.recv_from(&mut room) else {
+                    continue;
+                };
                 let body = &room[..size];
                 if self.fed(held, peer.port(), body) {
                     continue;

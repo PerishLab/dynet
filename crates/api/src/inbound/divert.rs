@@ -1,5 +1,6 @@
 mod roll;
 
+use super::lasting;
 use super::warren::{Pools, Served, Warren, gather, stand};
 use dynet_core::{Error, Span};
 pub(super) use roll::Held;
@@ -9,6 +10,7 @@ use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
@@ -21,6 +23,7 @@ pub struct Divert<'a> {
     pub(super) dart: u16,
     book: Mutex<Roll>,
     full: Once,
+    done: AtomicBool,
     pub(super) warren: &'a Warren<'a>,
     pub(super) pools: &'a Pools,
     pub(super) served: Mutex<Served>,
@@ -48,6 +51,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error
         dart,
         book: Mutex::new(Roll::new()),
         full: Once::new(),
+        done: AtomicBool::new(false),
         warren,
         pools: &pools,
         served: Mutex::new(Served::default()),
@@ -70,7 +74,7 @@ impl Divert<'_> {
             .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
         let started = Instant::now();
         let mut swept = Duration::ZERO;
-        while started.elapsed() < span {
+        while lasting(started, span) {
             let since = started.elapsed();
             if since >= swept + SWEEP {
                 swept = since;
@@ -88,7 +92,12 @@ impl Divert<'_> {
                 sending.consume(carried.len(), |room| room.copy_from_slice(&carried));
             }
         }
+        self.done.store(true, Ordering::Relaxed);
         Ok(())
+    }
+
+    pub(super) fn spent(&self) -> bool {
+        self.done.load(Ordering::Relaxed)
     }
 
     fn turn(&self, body: &mut [u8]) -> bool {
