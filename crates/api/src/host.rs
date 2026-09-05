@@ -11,7 +11,7 @@ pub use fragment::{Fragment, Held, MARKER, held};
 pub use link::Link;
 pub use reclaim::{Cleared, reclaim, sweep};
 pub use route::Route;
-pub use shape::{Shape, survey};
+pub use shape::{Shape, read, survey};
 pub use veil::{SEAT, Veil};
 
 use dynet_core::Error;

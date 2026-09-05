@@ -2,7 +2,8 @@ use dynet_core::Error;
 use std::fs;
 use std::path::Path;
 
-const STUB: &str = "/run/systemd/resolve/stub-resolv.conf";
+const STUB: &str = "stub-resolv.conf";
+const UPLINK: &str = "/run/systemd/resolve/resolv.conf";
 const RESOLV: &str = "/etc/resolv.conf";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,7 +24,7 @@ impl Shape {
                 "systemd-resolved manages resolution and carries an upstream".to_string()
             }
             Self::Resolved { upstream: false } => concat!(
-                "systemd-resolved manages resolution but names no upstream, so every ",
+                "systemd-resolved manages resolution but its uplink names no upstream, so every ",
                 "lookup already fails; on a host whose interface is configured by ifupdown ",
                 "the upstream lives in dns-nameservers, which resolved does not read. ",
                 "Repair: write DNS= and Domains=~. into a drop-in under ",
@@ -47,28 +48,31 @@ impl Shape {
 }
 
 pub fn survey() -> Result<Shape, Error> {
-    let path = Path::new(RESOLV);
-    let Ok(metadata) = fs::symlink_metadata(path) else {
+    read(Path::new(RESOLV), Path::new(UPLINK))
+}
+
+pub fn read(resolv: &Path, uplink: &Path) -> Result<Shape, Error> {
+    let Ok(metadata) = fs::symlink_metadata(resolv) else {
         return Ok(Shape::Missing);
     };
     if !metadata.file_type().is_symlink() {
         return Ok(Shape::Plain);
     }
-    let target = fs::read_link(path)
-        .map_err(|error| Error::new(format!("cannot read {RESOLV}: {error}")))?;
-    if !target.ends_with("stub-resolv.conf") && !target.ends_with("resolv.conf") {
+    let target = fs::read_link(resolv)
+        .map_err(|error| Error::new(format!("cannot read {}: {error}", resolv.display())))?;
+    if !target.ends_with(STUB) && !target.ends_with("resolv.conf") {
         return Ok(Shape::Plain);
     }
-    if !Path::new(STUB).exists() {
+    if !uplink.exists() {
         return Ok(Shape::Plain);
     }
     Ok(Shape::Resolved {
-        upstream: upstream(),
+        upstream: named(uplink),
     })
 }
 
-fn upstream() -> bool {
-    let Ok(text) = fs::read_to_string(STUB) else {
+fn named(uplink: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(uplink) else {
         return false;
     };
     text.lines()
