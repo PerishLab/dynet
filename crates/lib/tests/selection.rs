@@ -213,3 +213,78 @@ fn confines() {
         "a node outside the datagram pool holds no datagram standing at all"
     );
 }
+
+#[test]
+fn surveys() {
+    let now = Instant::now();
+    let mut selector = Selector::new(&cluster(3), policy(), now);
+    let seen = selector.survey(Bearing::Stream);
+    assert_eq!(seen.len(), 3, "every node in the cluster is readable");
+    assert!(
+        seen.iter()
+            .all(|(_, standing)| standing.answered() == 0 && standing.charged() == 0),
+        "a node that has carried nothing has counted nothing"
+    );
+    let label = Label::new("node-1").expect("label");
+    selector.observed(&label, Bearing::Stream, Verdict::Answered, now);
+    selector.observed(&label, Bearing::Stream, Verdict::Answered, now);
+    selector.observed(
+        &label,
+        Bearing::Stream,
+        Verdict::Faulted(Fault::Silent),
+        now,
+    );
+    let read = counted(&selector, &label);
+    assert_eq!(read, (2, 1), "the survey counts what the node was told");
+}
+
+#[test]
+fn excuses() {
+    let now = Instant::now();
+    let mut selector = Selector::new(&cluster(2), policy(), now);
+    let label = Label::new("node-0").expect("label");
+    selector.observed(
+        &label,
+        Bearing::Stream,
+        Verdict::Faulted(Fault::Refused),
+        now,
+    );
+    assert_eq!(
+        counted(&selector, &label),
+        (1, 0),
+        "a failure the destination owns is not charged to the node it left through"
+    );
+}
+
+#[test]
+fn divides() {
+    let now = Instant::now();
+    let mut selector = Selector::new(&cluster(2), policy(), now);
+    let label = Label::new("node-0").expect("label");
+    selector.observed(
+        &label,
+        Bearing::Datagram,
+        Verdict::Faulted(Fault::Silent),
+        now,
+    );
+    assert_eq!(
+        counted(&selector, &label),
+        (0, 0),
+        "a datagram fault is counted against the datagram bearing alone"
+    );
+    let borne = selector
+        .survey(Bearing::Datagram)
+        .into_iter()
+        .find(|(seen, _)| *seen == label)
+        .expect("the node bears datagrams");
+    assert_eq!((borne.1.answered(), borne.1.charged()), (0, 1));
+}
+
+fn counted(selector: &Selector, label: &Label) -> (u32, u32) {
+    let seen = selector
+        .survey(Bearing::Stream)
+        .into_iter()
+        .find(|(found, _)| found == label)
+        .expect("the node is in the survey");
+    (seen.1.answered(), seen.1.charged())
+}

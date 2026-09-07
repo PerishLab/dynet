@@ -65,6 +65,15 @@ are.
   the ledger of issued addresses survives a reload, so sessions already carried
   are not disturbed.
 
+- What the running service thinks of each node is recorded to
+  `/run/dynet/<instance>.standing` on every sweep and read back by
+  `dynet standing`. It is a file and not a socket because this product declares
+  nothing to listen on. The first line carries the moment it was taken and how
+  long the service has stood, so a reader can tell a snapshot from now; each
+  line after it names the cluster, the bearing, the weight, the count answered
+  and the count charged, and the node's label last, because a label carries
+  spaces and nothing else may follow it.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

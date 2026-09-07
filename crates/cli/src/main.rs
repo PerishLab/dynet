@@ -38,6 +38,7 @@ enum Command {
         bare: bool,
     },
     Down,
+    Standing,
     Divert(watch::Errand),
     Resolve {
         #[arg(long)]
@@ -112,9 +113,10 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         .map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
-        Command::Doctor => doctor(&instance),
-        Command::Up { claim, bare } => raise(&instance, &config, &claim, bare),
-        Command::Down => lower(&instance),
+        Command::Doctor => Boundary(instance).doctor(),
+        Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
+        Command::Down => Boundary(instance).lower(),
+        Command::Standing => Boundary(instance).reading(),
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Resolve {
             subscription,
@@ -149,52 +151,66 @@ fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage
     })
 }
 
-fn doctor(instance: &Instance) -> Result<ExitCode, Error> {
-    let shape = host::survey()?;
-    println!("resolver: {}", shape.explain());
-    println!(
-        "instance {}: priority {}",
-        instance.get(),
-        instance.priority()
-    );
-    println!("  device: {}", present(host::Link::present(instance)));
-    println!("  veil: {}", present(host::Veil::raised(instance)));
-    println!("  rule: {}", present(host::Route::declared(instance)));
-    let registry = host::Route::registry(instance);
-    println!("  {}: {:?}", registry.display(), host::held(&registry)?);
-    let stray = host::sweep(instance);
-    println!("strays: devices {:?} tables {:?}", stray.links, stray.veils);
-    Ok(
-        match shape.ownable() && stray.links.is_empty() && stray.veils.is_empty() {
-            true => ExitCode::SUCCESS,
-            false => ExitCode::from(1),
-        },
-    )
-}
+struct Boundary(Instance);
 
-fn raise(instance: &Instance, config: &Config, claim: &str, bare: bool) -> Result<ExitCode, Error> {
-    let ground = host::Ground {
-        port: config.port,
-        claim,
-        span: Span::new(&config.span)?,
-        bare,
-    };
-    let standing = host::establish(instance, &ground)?;
-    println!(
-        "up: reclaimed={} veiled={}",
-        standing.cleared.any(),
-        standing.veiled
-    );
-    Ok(ExitCode::SUCCESS)
-}
+impl Boundary {
+    fn doctor(&self) -> Result<ExitCode, Error> {
+        let shape = host::survey()?;
+        println!("resolver: {}", shape.explain());
+        println!("instance {}: priority {}", self.0.get(), self.0.priority());
+        println!("  device: {}", present(host::Link::present(&self.0)));
+        println!("  veil: {}", present(host::Veil::raised(&self.0)));
+        println!("  rule: {}", present(host::Route::declared(&self.0)));
+        let registry = host::Route::registry(&self.0);
+        println!("  {}: {:?}", registry.display(), host::held(&registry)?);
+        let stray = host::sweep(&self.0);
+        println!("strays: devices {:?} tables {:?}", stray.links, stray.veils);
+        Ok(
+            match shape.ownable() && stray.links.is_empty() && stray.veils.is_empty() {
+                true => ExitCode::SUCCESS,
+                false => ExitCode::from(1),
+            },
+        )
+    }
 
-fn lower(instance: &Instance) -> Result<ExitCode, Error> {
-    let cleared = host::reclaim(instance)?;
-    println!(
-        "down: veil={} route={} link={}",
-        cleared.veil, cleared.route, cleared.link
-    );
-    Ok(ExitCode::SUCCESS)
+    fn raise(&self, config: &Config, claim: &str, bare: bool) -> Result<ExitCode, Error> {
+        let ground = host::Ground {
+            port: config.port,
+            claim,
+            span: Span::new(&config.span)?,
+            bare,
+        };
+        let standing = host::establish(&self.0, &ground)?;
+        println!(
+            "up: reclaimed={} veiled={}",
+            standing.cleared.any(),
+            standing.veiled
+        );
+        Ok(ExitCode::SUCCESS)
+    }
+
+    fn lower(&self) -> Result<ExitCode, Error> {
+        let cleared = host::reclaim(&self.0)?;
+        println!(
+            "down: veil={} route={} link={}",
+            cleared.veil, cleared.route, cleared.link
+        );
+        Ok(ExitCode::SUCCESS)
+    }
+
+    fn reading(&self) -> Result<ExitCode, Error> {
+        let path = dynet_api::inbound::standing::path(&self.0);
+        let text = std::fs::read_to_string(&path).map_err(|error| {
+            Error::new(format!(
+                "cannot read {}: {error}; the service writes it every sweep while it is diverting",
+                path.display()
+            ))
+        })?;
+        for line in text.lines().filter(|line| *line != host::MARKER) {
+            println!("{line}");
+        }
+        Ok(ExitCode::SUCCESS)
+    }
 }
 
 fn present(held: bool) -> &'static str {

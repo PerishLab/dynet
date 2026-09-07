@@ -8,6 +8,8 @@ const RECOVERY: f64 = 0.25;
 pub struct Standing {
     credit: f64,
     touched: Instant,
+    answered: u32,
+    charged: u32,
 }
 
 impl Standing {
@@ -15,7 +17,17 @@ impl Standing {
         Self {
             credit: 1.0,
             touched: now,
+            answered: 0,
+            charged: 0,
         }
+    }
+
+    pub fn answered(&self) -> u32 {
+        self.answered
+    }
+
+    pub fn charged(&self) -> u32 {
+        self.charged
     }
 
     pub fn credit(&self, now: Instant, policy: Policy) -> f64 {
@@ -31,11 +43,13 @@ impl Standing {
     pub fn charge(&mut self, now: Instant, policy: Policy) {
         self.credit = self.credit(now, policy) * PENALTY;
         self.touched = now;
+        self.charged = self.charged.saturating_add(1);
     }
 
     pub fn credited(&mut self, now: Instant, policy: Policy) {
         let held = self.credit(now, policy);
         self.credit = held + (1.0 - held) * RECOVERY;
         self.touched = now;
+        self.answered = self.answered.saturating_add(1);
     }
 }

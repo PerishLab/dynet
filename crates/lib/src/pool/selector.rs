@@ -79,6 +79,16 @@ impl Selector {
         Some(standing.weight(now, self.policy))
     }
 
+    pub fn survey(&self, bearing: Bearing) -> Vec<(Label, Standing)> {
+        let Some(rank) = self.ranks.get(&bearing) else {
+            return Vec::new();
+        };
+        rank.standings
+            .iter()
+            .map(|(label, standing)| (label.clone(), *standing))
+            .collect()
+    }
+
     pub fn choose(&mut self, bearing: Bearing, now: Instant) -> Option<Label> {
         let policy = self.policy;
         self.ranks.get_mut(&bearing)?.choose(policy, now)

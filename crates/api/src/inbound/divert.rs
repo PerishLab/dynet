@@ -78,7 +78,7 @@ impl Divert<'_> {
             let since = started.elapsed();
             if since >= swept + SWEEP {
                 swept = since;
-                self.glean();
+                self.glean(started);
             }
             if self.warren.reload.swap(false, Ordering::Relaxed) {
                 renew(self.warren);
@@ -183,8 +183,9 @@ impl Divert<'_> {
         }
     }
 
-    fn glean(&self) {
+    fn glean(&self, started: Instant) {
         self.warren.forget();
+        super::standing::record(self.warren, self.pools, started);
         let Ok(mut book) = self.book.lock() else {
             return;
         };
