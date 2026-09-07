@@ -6,7 +6,9 @@ use dynet_core::{
     Bearing, Cluster, Error, Instance, Label, Name, Policy, Router, Selector, Verdict,
 };
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
@@ -42,6 +44,8 @@ pub struct Warren<'a> {
     pub entries: &'a [Entry],
     pub clusters: &'a [Cluster],
     pub router: &'a Mutex<Router>,
+    pub table: &'a Path,
+    pub reload: &'a AtomicBool,
     pub port: u16,
     pub upstream: &'a str,
     pub book: &'a Book,
@@ -139,4 +143,21 @@ pub fn stand(warren: &Warren, pools: &Pools, span: Duration) {
         return;
     };
     (warren.told)(&format!("the resolver refused to start: {error}"));
+}
+
+pub fn renew(warren: &Warren) {
+    let held = match super::table::read(warren.table, warren.clusters) {
+        Ok(table) => table,
+        Err(error) => {
+            (warren.told)(&format!("table refused, the standing one is kept: {error}"));
+            return;
+        }
+    };
+    let Ok(mut router) = warren.router.lock() else {
+        (warren.told)("cannot reload the table: the router is poisoned");
+        return;
+    };
+    let count = held.rules().len();
+    router.relay(held);
+    (warren.told)(&format!("table reloaded, {count} rules standing"));
 }

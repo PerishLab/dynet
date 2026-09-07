@@ -22,6 +22,10 @@ impl Router {
         &self.table
     }
 
+    pub fn relay(&mut self, table: Table) {
+        self.table = table;
+    }
+
     pub fn ledger(&self) -> &Ledger {
         &self.ledger
     }

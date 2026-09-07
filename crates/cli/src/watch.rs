@@ -1,7 +1,10 @@
+use dynet_api::inbound::table;
 use dynet_api::{catalog, inbound, subscription};
-use dynet_core::{Domain, Error, Instance, Name, Range, Router, Rule, Span, Subject, Table};
+use dynet_core::{Error, Instance, Router, Span};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[derive(clap::Args)]
 pub struct Errand {
@@ -9,8 +12,6 @@ pub struct Errand {
     pub subscription: PathBuf,
     #[arg(long)]
     pub clusters: PathBuf,
-    #[arg(long)]
-    pub cluster: String,
     #[arg(long, default_value = "1.1.1.1")]
     pub upstream: String,
     #[arg(long, default_value = "0.0.0.0/0")]
@@ -19,10 +20,8 @@ pub struct Errand {
     pub bare: bool,
     #[arg(long)]
     pub unit: bool,
-    #[arg(long, default_value = "")]
-    pub holds: String,
-    #[arg(long, default_value = "")]
-    pub name: String,
+    #[arg(long)]
+    pub table: PathBuf,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
 }
@@ -65,18 +64,18 @@ fn staged<T>(
     })?;
     let held = catalog::declare(&spoken, &entries)?;
     entries.extend(held.spoken().iter().cloned());
-    let wanted = held
-        .clusters()
-        .iter()
-        .find(|item| item.name().get() == errand.cluster)
-        .ok_or_else(|| Error::new(format!("no cluster named {}", errand.cluster)))?;
-    let router = std::sync::Mutex::new(Router::new(ruled(errand, wanted.name())?));
+    let router = std::sync::Mutex::new(Router::new(table::read(&errand.table, held.clusters())?));
+    let reload = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
+        .map_err(|error| Error::new(format!("cannot listen for a reload: {error}")))?;
     let told = |line: &str| println!("  {line}");
     let warren = inbound::Warren {
         instance,
         entries: &entries,
         clusters: held.clusters(),
         router: &router,
+        table: &errand.table,
+        reload: &reload,
         port: stage.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(instance.mark()),
@@ -84,41 +83,6 @@ fn staged<T>(
         told: &told,
     };
     act(&warren)
-}
-
-fn ruled(errand: &Errand, wanted: &Name) -> Result<Table, Error> {
-    let mut rules = Vec::new();
-    for name in split(&errand.name) {
-        rules.push(Rule::new(
-            Subject::Suffix(Domain::new(name)?),
-            wanted.clone(),
-        ));
-    }
-    for held in split(&errand.holds) {
-        rules.push(Rule::new(Subject::Holds(span(held)?), wanted.clone()));
-    }
-    Ok(Table::new(rules, Name::new("direct")?))
-}
-
-pub fn split(listed: &str) -> Vec<&str> {
-    listed
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .collect()
-}
-
-pub fn span(claim: &str) -> Result<Range, Error> {
-    let (base, prefix) = claim
-        .split_once('/')
-        .ok_or_else(|| Error::new(format!("{claim} carries no prefix length")))?;
-    let base = base
-        .parse()
-        .map_err(|_| Error::new(format!("{base} is not an address")))?;
-    let prefix = prefix
-        .parse()
-        .map_err(|_| Error::new(format!("{prefix} is not a prefix length")))?;
-    Range::new(base, prefix)
 }
 
 pub fn recount(served: &inbound::Served) -> ExitCode {
@@ -142,15 +106,10 @@ fn told(name: &str, errand: &Errand) -> String {
         format!("/usr/local/bin/dynet --instance {name} divert"),
         format!("--subscription {}", errand.subscription.display()),
         format!("--clusters {}", errand.clusters.display()),
-        format!("--cluster {}", errand.cluster),
         format!("--claim {}", errand.claim),
         format!("--upstream {}", errand.upstream),
     ];
-    for (flag, value) in [("--name", &errand.name), ("--holds", &errand.holds)] {
-        if !value.is_empty() {
-            parts.push(format!("{flag} {value}"));
-        }
-    }
+    parts.push(format!("--table {}", errand.table.display()));
     parts.push("--seconds 0".to_string());
     parts.join(" ")
 }
@@ -176,6 +135,7 @@ pub fn unit(name: &str, errand: &Errand) -> String {
             errand.claim
         ),
         format!("ExecStart={run}"),
+        "ExecReload=/bin/kill -HUP $MAINPID".to_string(),
         format!("ExecStopPost=-/usr/local/bin/dynet --instance {name} down"),
         "Restart=always".to_string(),
         "RestartSec=5".to_string(),

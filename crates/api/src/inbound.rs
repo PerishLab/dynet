@@ -2,6 +2,7 @@ mod dart;
 mod divert;
 mod link;
 mod store;
+pub mod table;
 mod warden;
 mod warren;
 

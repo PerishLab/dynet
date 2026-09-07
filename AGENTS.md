@@ -54,6 +54,17 @@ are.
   same seat, so the reply carries the source connection tracking expects and a
   strict resolver accepts it. Binding to every address lets the kernel choose
   the source instead, which only a tolerant socket will take.
+- A `Table` is the routing policy, declared in its own file and named by
+  `--table`. It carries a rule per line of policy, each naming exactly one of
+  `exact`, `suffix` or `holds` and the cluster that carries what it matches, and
+  a `fallback` that is `direct` unless it names a declared cluster. It is a
+  separate file from the cluster declaration because the two change on different
+  clocks: topology changes when the subscription or an exit does, policy changes
+  whenever a destination is added. The running service re-reads it on SIGHUP and
+  keeps the standing table when the new one refuses, so a bad edit costs nothing;
+  the ledger of issued addresses survives a reload, so sessions already carried
+  are not disturbed.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

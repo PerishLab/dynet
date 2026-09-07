@@ -1,7 +1,7 @@
 mod roll;
 
 use super::lasting;
-use super::warren::{Pools, Served, Warren, gather, stand};
+use super::warren::{Pools, Served, Warren, gather, renew, stand};
 use dynet_core::{Error, Span};
 pub(super) use roll::Held;
 use roll::Roll;
@@ -79,6 +79,9 @@ impl Divert<'_> {
             if since >= swept + SWEEP {
                 swept = since;
                 self.glean();
+            }
+            if self.warren.reload.swap(false, Ordering::Relaxed) {
+                renew(self.warren);
             }
             let beat =
                 Beat::from_millis(i64::try_from(started.elapsed().as_millis()).unwrap_or_default());
