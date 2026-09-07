@@ -54,10 +54,17 @@ are.
   the redirect, so the exemption names the traffic and not the account it runs
   under.
 - The captured query is answered from the address the caller wrote to. The
-  firewall table maps it to one fixed local seat and the resolver binds that
-  same seat, so the reply carries the source connection tracking expects and a
-  strict resolver accepts it. Binding to every address lets the kernel choose
-  the source instead, which only a tolerant socket will take.
+  firewall table maps it to one fixed seat and the resolver binds that same
+  seat, so the reply carries the source connection tracking expects and a strict
+  resolver accepts it. Binding to every address lets the kernel choose the
+  source instead, which only a tolerant socket will take. The seat is the span's
+  own first address rather than loopback, because a caller that is not this host
+  cannot reach loopback and reaching it through a redirected local route would
+  return an answer from an address the caller never wrote to.
+- A query forwarded from elsewhere is captured in the prerouting hook and only
+  from a declared source, the same scope that decides what traffic is diverted
+  at all. Without a declared source there is no prerouting chain, so nothing
+  that is not this host's is answered by accident.
 - A `Table` is the routing policy, declared in its own file and named by
   `--table`. It carries a rule per line of policy, each naming exactly one of
   `exact`, `suffix` or `holds` and the cluster that carries what it matches, and

@@ -61,7 +61,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error
         shy: Mutex::new(std::collections::HashMap::new()),
     };
     std::thread::scope(|scope| {
-        scope.spawn(|| stand(warren, &pools, patience));
+        scope.spawn(|| stand(warren, &pools, (span.seat(), patience)));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
         divert.pump(patience)

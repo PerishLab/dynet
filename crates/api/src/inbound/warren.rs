@@ -6,6 +6,7 @@ use dynet_core::{
     Bearing, Cluster, Error, Instance, Label, Name, Policy, Router, Selector, Verdict,
 };
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
@@ -138,8 +139,8 @@ pub fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
     Ok(pools)
 }
 
-pub fn stand(warren: &Warren, pools: &Pools, span: Duration) {
-    let Err(error) = warden::attend(warren, pools, span) else {
+pub fn stand(warren: &Warren, pools: &Pools, ground: (Ipv4Addr, Duration)) {
+    let Err(error) = warden::attend(warren, pools, ground) else {
         return;
     };
     (warren.told)(&format!("the resolver refused to start: {error}"));

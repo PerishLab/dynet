@@ -1,21 +1,39 @@
 use super::{attempt, run};
-use dynet_core::{Error, Instance};
-
-pub const SEAT: &str = "127.0.0.1";
+use dynet_core::{Error, Instance, Span};
+use std::net::Ipv4Addr;
 
 pub struct Veil;
+
+fn capture(seat: Ipv4Addr, port: u16, from: &str) -> String {
+    format!("    {from}meta l4proto {{ tcp, udp }} th dport 53 dnat ip to {seat}:{port}\n")
+}
 
 impl Veil {
     pub fn raised(instance: &Instance) -> bool {
         attempt("nft", &["list", "table", "inet", instance.get()])
     }
 
-    pub fn raise(instance: &Instance, port: u16) -> Result<(), Error> {
+    pub fn raise(
+        instance: &Instance,
+        ground: (Span, u16),
+        sources: &[String],
+    ) -> Result<(), Error> {
+        let (span, port) = ground;
         let name = instance.get();
         let mark = instance.mark();
-        let rules = format!(
-            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n    meta l4proto {{ tcp, udp }} th dport 53 dnat ip to {SEAT}:{port}\n  }}\n}}\n"
+        let seat = span.seat();
+        let mut rules = format!(
+            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n{}  }}\n",
+            capture(seat, port, "")
         );
+        if !sources.is_empty() {
+            let from = format!("ip saddr {{ {} }} ", sources.join(", "));
+            rules.push_str(&format!(
+                "  chain prerouting {{\n    type nat hook prerouting priority -100; policy accept;\n{}  }}\n",
+                capture(seat, port, &from)
+            ));
+        }
+        rules.push_str("}\n");
         write(&rules)
     }
 

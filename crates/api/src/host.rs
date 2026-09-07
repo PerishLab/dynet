@@ -12,7 +12,7 @@ pub use link::Link;
 pub use reclaim::{Cleared, reclaim, sweep};
 pub use route::Route;
 pub use shape::{Shape, read, survey};
-pub use veil::{SEAT, Veil};
+pub use veil::Veil;
 
 use dynet_core::Error;
 use std::process::Command;

@@ -5,7 +5,7 @@ use crate::host::Route;
 use crate::outbound::Listener;
 use crate::resolver::{self, Answer, Packet, QUAD};
 use dynet_core::{Bearing, Decision, Domain, Error, Fault, Ground, Name, Verdict};
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(200);
@@ -25,8 +25,9 @@ struct Post<'a> {
     socket: &'a UdpSocket,
 }
 
-pub fn attend(warren: &Warren, pools: &Pools, span: Duration) -> Result<(), Error> {
-    let socket = UdpSocket::bind((crate::host::SEAT, warren.port))
+pub fn attend(warren: &Warren, pools: &Pools, ground: (Ipv4Addr, Duration)) -> Result<(), Error> {
+    let (seat, span) = ground;
+    let socket = UdpSocket::bind((seat, warren.port))
         .map_err(|error| Error::new(format!("cannot hold the resolver port: {error}")))?;
     let _ = socket.set_read_timeout(Some(REST));
     let post = Post {

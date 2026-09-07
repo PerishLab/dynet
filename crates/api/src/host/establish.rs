@@ -39,7 +39,7 @@ fn raise(instance: &Instance, ground: &Ground) -> Result<(), Error> {
     if ground.bare {
         return Ok(());
     }
-    Veil::raise(instance, ground.port)
+    Veil::raise(instance, (ground.span, ground.port), ground.sources)
 }
 
 fn unwind(instance: &Instance, error: Error) -> Error {
