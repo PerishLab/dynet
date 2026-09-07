@@ -120,7 +120,10 @@ are.
   configuration rather than an argument because it is a fact about the machine.
   This host's own traffic is always captured; traffic forwarded from elsewhere
   is captured only from a declared source prefix, so a machine sitting on a
-  network it does not own diverts nothing by accident. The claim stays what it
+  network it does not own diverts nothing by accident. Configuration here means
+  the environment, because nothing in this repository passes a file to the
+  cascade, so a scope is one comma-separated `DYNET_SOURCES` and never a list
+  the cascade cannot read back. The claim stays what it
   always was, the destinations in scope, and the two are separate axes.
 - The score is shared across every caller. A node demoted by one client's
   request is demoted for all of them, which is the pool doing what it is for:
