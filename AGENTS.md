@@ -154,6 +154,21 @@ are.
   routing and firewall that steer traffic to it are the host's to arrange, not
   this product's.
 
+- When a transit port is declared alongside a source, this product installs the
+  steering itself: a mangle rule that marks a forwarded stream and hands it to
+  the transparent seat, a rule of its own ahead of the diversion, and a table
+  carrying one local route. Ahead is the whole point. Two capture shapes on one
+  machine contend, and the rule with the smaller priority runs; leaving that to
+  chance once measured the device twice and read it as the seat being slower.
+- The split between the two shapes is by protocol and not by accident. A
+  forwarded stream is ushered, because the kernel can hand over its destination;
+  a forwarded datagram and everything this host sends itself still go through
+  the device. Port fifty three is excluded from the steering so the resolver
+  keeps its own capture.
+- An instance derives four numbers from its own name and none of them may
+  collide: the rule priority, the mark that exempts its own sockets, the table a
+  diversion reads, and the table and mark a transit uses.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

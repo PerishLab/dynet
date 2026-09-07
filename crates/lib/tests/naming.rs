@@ -67,3 +67,24 @@ fn tabled() {
         "the table and the rule priority are different numbers in different namespaces"
     );
 }
+
+#[test]
+fn steered() {
+    let first = Instance::new("dynet0").expect("instance");
+    let other = Instance::new("dynet1").expect("instance");
+    for held in [&first, &other] {
+        assert!((42000..43000).contains(&held.transit()));
+        assert_ne!(
+            held.transit(),
+            held.table(),
+            "the table a diversion reads and the table a transit reads are different tables"
+        );
+        assert_ne!(
+            held.steer(),
+            held.mark(),
+            "the mark that steers a caller and the mark that exempts this product are different marks"
+        );
+    }
+    assert_ne!(first.transit(), other.transit());
+    assert_ne!(first.steer(), other.steer());
+}

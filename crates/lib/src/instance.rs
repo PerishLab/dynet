@@ -3,6 +3,8 @@ use crate::error::Error;
 const PREFIX: &str = "dynet";
 const BASE: u32 = 17000;
 const TABLE: u32 = 41000;
+const TRANSIT: u32 = 42000;
+const STEER: u32 = 0x647a_0000;
 const SPAN: u32 = 1000;
 const STAMP: u32 = 0x6479_0000;
 const SEED: u64 = 0xcbf2_9ce4_8422_2325;
@@ -37,6 +39,14 @@ impl Instance {
 
     pub fn table(&self) -> u32 {
         TABLE + self.spread()
+    }
+
+    pub fn transit(&self) -> u32 {
+        TRANSIT + self.spread()
+    }
+
+    pub fn steer(&self) -> u32 {
+        STEER + self.spread()
     }
 
     pub fn mark(&self) -> u32 {

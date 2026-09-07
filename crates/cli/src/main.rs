@@ -186,13 +186,15 @@ impl Boundary {
             span: Span::new(&config.span)?,
             bare,
             sources: &sources,
+            transit: config.transit,
         };
         let standing = host::establish(&self.0, &ground)?;
         println!(
-            "up: reclaimed={} veiled={} capturing={}",
+            "up: reclaimed={} veiled={} capturing={} {}",
             standing.cleared.any(),
             standing.veiled,
-            spoken(&sources)
+            spoken(&sources),
+            steered(config.transit, &sources)
         );
         Ok(ExitCode::SUCCESS)
     }
@@ -233,6 +235,13 @@ fn spoken(sources: &[String]) -> String {
     match sources.is_empty() {
         true => "this host".to_string(),
         false => format!("this host and {}", sources.join(", ")),
+    }
+}
+
+fn steered(transit: u16, sources: &[String]) -> String {
+    match transit == 0 || sources.is_empty() {
+        true => "by the device alone".to_string(),
+        false => format!("with forwarded streams ushered on :{transit} ahead of the device"),
     }
 }
 

@@ -22,8 +22,12 @@ impl Route {
             .is_ok_and(|text| !text.trim().is_empty())
     }
 
-    pub fn create(instance: &Instance, span: Span, told: (&str, &[String])) -> Result<(), Error> {
-        let (claim, sources) = told;
+    pub fn create(
+        instance: &Instance,
+        span: Span,
+        told: (&str, &[String], u16),
+    ) -> Result<(), Error> {
+        let (claim, sources, transit) = told;
         let name = instance.get();
         let priority = instance.priority();
         let number = instance.table();
@@ -47,7 +51,36 @@ impl Route {
         for source in sources {
             Self::spare(instance, claim, source)?;
         }
-        Ok(())
+        match transit == 0 || sources.is_empty() {
+            true => Ok(()),
+            false => Self::steer(instance),
+        }
+    }
+
+    fn steer(instance: &Instance) -> Result<(), Error> {
+        let table = instance.transit().to_string();
+        let ahead = (instance.priority() - 2).to_string();
+        let mark = instance.steer().to_string();
+        run(
+            "ip",
+            &[
+                "route",
+                "replace",
+                "local",
+                "0.0.0.0/0",
+                "dev",
+                "lo",
+                "table",
+                &table,
+            ],
+        )?;
+        run(
+            "ip",
+            &[
+                "rule", "add", "fwmark", &mark, "priority", &ahead, "table", &table,
+            ],
+        )
+        .map(|_| ())
     }
 
     fn divert(instance: &Instance, claim: &str, arriving: &str) -> Result<(), Error> {
@@ -115,6 +148,13 @@ impl Route {
             run("ip", &["rule", "del", "priority", &spared])?;
             removed = true;
         }
+        let ahead = (instance.priority() - 2).to_string();
+        while Self::ruled(instance.priority() - 2) {
+            run("ip", &["rule", "del", "priority", &ahead])?;
+            removed = true;
+        }
+        let transit = instance.transit().to_string();
+        attempt("ip", &["route", "flush", "table", &transit]);
         if attempt("ip", &["route", "show", "table", name]) {
             attempt("ip", &["route", "flush", "table", name]);
         }

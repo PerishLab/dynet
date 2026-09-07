@@ -13,6 +13,7 @@ pub struct Ground<'a> {
     pub span: Span,
     pub bare: bool,
     pub sources: &'a [String],
+    pub transit: u16,
 }
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
@@ -35,11 +36,19 @@ pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error
 
 fn raise(instance: &Instance, ground: &Ground) -> Result<(), Error> {
     Link::create(instance, ground.span)?;
-    Route::create(instance, ground.span, (ground.claim, ground.sources))?;
+    Route::create(
+        instance,
+        ground.span,
+        (ground.claim, ground.sources, ground.transit),
+    )?;
     if ground.bare {
         return Ok(());
     }
-    Veil::raise(instance, (ground.span, ground.port), ground.sources)
+    Veil::raise(
+        instance,
+        (ground.span, ground.port, ground.transit),
+        ground.sources,
+    )
 }
 
 fn unwind(instance: &Instance, error: Error) -> Error {
