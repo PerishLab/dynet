@@ -74,6 +74,19 @@ are.
   and the count charged, and the node's label last, because a label carries
   spaces and nothing else may follow it.
 
+- An answer never reaches the caller before the route that carries it exists.
+  The store serves a remembered answer past its own life while refreshing it,
+  and the ledger releases an issue on its own clock, so a remembered answer can
+  outlive the route it was issued under; before speaking from memory the
+  resolver checks the ledger still holds every address it is about to name and
+  reissues them when it does not. Without that the caller receives an address
+  the kernel routes by the main interface, and the session is lost before this
+  product ever sees it.
+- Every use of a node names the node. Carriage prints its verdict, a fresh
+  lookup prints the node it chose, and a refreshed one prints the node that
+  refreshed it, because a node scored by an event nobody can name cannot be
+  argued about later.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

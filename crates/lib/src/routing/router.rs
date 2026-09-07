@@ -51,6 +51,10 @@ impl Router {
         self.ledger.sweep(now)
     }
 
+    pub fn holds(&self, address: IpAddr, now: Instant) -> bool {
+        self.ledger.lookup(address, now).is_some()
+    }
+
     pub fn reached(&self, address: IpAddr, now: Instant) -> Decision {
         match self.ledger.lookup(address, now) {
             Some(issue) => issue.decision().clone(),

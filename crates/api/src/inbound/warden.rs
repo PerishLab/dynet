@@ -86,6 +86,8 @@ impl Post<'_> {
             refresh,
         } = remembered
         {
+            let found = resolver::read(&reply)?;
+            self.assure(&domain, &found, &decision)?;
             let mark = u16::from_be_bytes([call.asked[0], call.asked[1]]);
             self.speak(&resolver::renew(&reply, mark, aged)?, call)?;
             return self.after(&key, &domain, &decision, refresh);
@@ -123,7 +125,10 @@ impl Post<'_> {
             return Ok(format!("{} from memory", key.name));
         }
         match self.again(key, domain, decision) {
-            Ok(()) => Ok(format!("{} from memory, refreshed", key.name)),
+            Ok(label) => Ok(format!(
+                "{} from memory, refreshed through {label}",
+                key.name
+            )),
             Err(error) => {
                 let spent = self.warren.store.missed(key);
                 Ok(format!(
@@ -134,16 +139,30 @@ impl Post<'_> {
         }
     }
 
-    fn again(&self, key: &Key, domain: &Domain, decision: &Decision) -> Result<(), Error> {
+    fn assure(&self, domain: &Domain, found: &[Answer], decision: &Decision) -> Result<(), Error> {
+        let now = Instant::now();
+        let router = self.warren.router.lock().map_err(|_| poisoned())?;
+        let live = found
+            .iter()
+            .all(|item| router.holds(IpAddr::V4(item.address), now));
+        drop(router);
+        if live {
+            return Ok(());
+        }
+        self.keep(domain, found, decision)?;
+        Ok(())
+    }
+
+    fn again(&self, key: &Key, domain: &Domain, decision: &Decision) -> Result<String, Error> {
         let asking = resolver::ask(&key.name, MARK)?;
-        let (_, framed) = self.carry(&asking, decision.cluster())?;
+        let (label, framed) = self.carry(&asking, decision.cluster())?;
         let reply = framed
             .get(2..)
             .ok_or_else(|| Error::new("the refreshed answer carried no body"))?;
         let found = resolver::read(reply)?;
         self.keep(domain, &found, decision)?;
         self.remember(key, reply, &found);
-        Ok(())
+        Ok(label)
     }
 
     fn remember(&self, key: &Key, reply: &[u8], found: &[Answer]) {

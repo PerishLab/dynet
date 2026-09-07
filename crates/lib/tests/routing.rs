@@ -180,3 +180,28 @@ fn released() {
         "an answer still alive must survive the sweep"
     );
 }
+
+#[test]
+fn holding() {
+    let mut router = Router::new(table());
+    let asked = router.asked(&domain("cdn.example.com"));
+    let answer: IpAddr = "203.0.113.9".parse().expect("answer");
+    let now = Instant::now();
+    let life = Duration::from_secs(60);
+    assert!(
+        !router.holds(answer, now),
+        "an address nobody was told about is carried by no issue"
+    );
+    router.issued(&domain("cdn.example.com"), &[answer], &asked, now + life);
+    assert!(router.holds(answer, now));
+    assert!(
+        !router.holds(answer, now + life + Duration::from_secs(1)),
+        "an issue past its expiry no longer carries the address it named"
+    );
+    let gone = router.forget(now + life + Duration::from_secs(1));
+    assert_eq!(gone, vec![answer], "sweeping reports what it released");
+    assert!(
+        !router.holds(answer, now),
+        "an address the sweep released is held by nothing, whatever the clock says"
+    );
+}
