@@ -117,7 +117,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         .map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
-        Command::Doctor => Boundary(instance).doctor(),
+        Command::Doctor => Boundary(instance).doctor(&config),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
         Command::Standing => Boundary(instance).reading(),
@@ -159,7 +159,7 @@ fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage
 struct Boundary(Instance);
 
 impl Boundary {
-    fn doctor(&self) -> Result<ExitCode, Error> {
+    fn doctor(&self, config: &Config) -> Result<ExitCode, Error> {
         let shape = host::survey()?;
         println!("resolver: {}", shape.explain());
         println!("instance {}: priority {}", self.0.get(), self.0.priority());
@@ -170,6 +170,15 @@ impl Boundary {
         println!("  {}: {:?}", registry.display(), host::held(&registry)?);
         let stray = host::sweep(&self.0);
         println!("strays: devices {:?} tables {:?}", stray.links, stray.veils);
+        let seat = Span::new(&config.span)?.seat();
+        let held = host::Veil::attended(seat, config.port);
+        println!("  resolver: {}", attending(held));
+        if !held && host::Route::declared(&self.0) {
+            println!(
+                "stranded: the rules are installed and nothing answers behind them, so a caller meets a hole"
+            );
+            return Ok(ExitCode::from(1));
+        }
         Ok(
             match shape.ownable() && stray.links.is_empty() && stray.veils.is_empty() {
                 true => ExitCode::SUCCESS,
@@ -235,6 +244,13 @@ fn spoken(sources: &[String]) -> String {
     match sources.is_empty() {
         true => "this host".to_string(),
         false => format!("this host and {}", sources.join(", ")),
+    }
+}
+
+fn attending(held: bool) -> &'static str {
+    match held {
+        true => "answering",
+        false => "silent",
     }
 }
 

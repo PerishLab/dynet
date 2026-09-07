@@ -20,6 +20,13 @@ impl Veil {
         attempt("nft", &["list", "table", "inet", instance.get()])
     }
 
+    pub fn attended(seat: Ipv4Addr, port: u16) -> bool {
+        match std::net::UdpSocket::bind((seat, port)) {
+            Ok(_) => false,
+            Err(error) => error.kind() == std::io::ErrorKind::AddrInUse,
+        }
+    }
+
     pub fn raise(
         instance: &Instance,
         ground: (Span, u16, u16),

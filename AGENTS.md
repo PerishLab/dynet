@@ -169,6 +169,19 @@ are.
   collide: the rule priority, the mark that exempts its own sockets, the table a
   diversion reads, and the table and mark a transit uses.
 
+- This product fails closed. When it stops without running its own teardown its
+  rules outlive it, and a caller meets a hole rather than the direct path. That
+  is chosen: the destinations routed to the detour must never fall back to
+  leaving from this host's own address, which is the exposure routing them there
+  exists to prevent. Failing open is right for a router carrying strangers and
+  wrong for a host carrying an operator's own accounts.
+- Because it fails closed, `doctor` must be able to see it. The device, the
+  firewall table and the rule are all still present after the process that
+  installed them has gone, so their presence says nothing; what says something
+  is whether the resolver's seat is held. A seat nobody holds beside rules that
+  are installed is reported as stranded and refuses. A bind that fails for want
+  of the address is not evidence of a listener and is read as silence.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the
