@@ -85,6 +85,7 @@ struct Config {
     #[cascade(arg)]
     port: u16,
     span: String,
+    sources: Vec<String>,
 }
 
 impl Default for Config {
@@ -93,6 +94,7 @@ impl Default for Config {
             instance: "dynet0".to_string(),
             port: 15353,
             span: host::PREFIX.to_string(),
+            sources: Vec::new(),
         }
     }
 }
@@ -179,12 +181,14 @@ impl Boundary {
             claim,
             span: Span::new(&config.span)?,
             bare,
+            sources: &config.sources,
         };
         let standing = host::establish(&self.0, &ground)?;
         println!(
-            "up: reclaimed={} veiled={}",
+            "up: reclaimed={} veiled={} capturing={}",
             standing.cleared.any(),
-            standing.veiled
+            standing.veiled,
+            scoped(&config.sources)
         );
         Ok(ExitCode::SUCCESS)
     }
@@ -210,6 +214,13 @@ impl Boundary {
             println!("{line}");
         }
         Ok(ExitCode::SUCCESS)
+    }
+}
+
+fn scoped(sources: &[String]) -> String {
+    match sources.is_empty() {
+        true => "this host".to_string(),
+        false => format!("this host and {}", sources.join(", ")),
     }
 }
 

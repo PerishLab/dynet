@@ -12,6 +12,7 @@ pub struct Ground<'a> {
     pub claim: &'a str,
     pub span: Span,
     pub bare: bool,
+    pub sources: &'a [String],
 }
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
@@ -34,7 +35,7 @@ pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error
 
 fn raise(instance: &Instance, ground: &Ground) -> Result<(), Error> {
     Link::create(instance, ground.span)?;
-    Route::create(instance, ground.claim, ground.span)?;
+    Route::create(instance, ground.span, (ground.claim, ground.sources))?;
     if ground.bare {
         return Ok(());
     }

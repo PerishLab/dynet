@@ -116,6 +116,17 @@ are.
   out loud, because a routing decision nobody can attribute is the shape this
   repository has already paid to fix once.
 
+- What Dynet captures is scoped by where the traffic came from, and the scope is
+  configuration rather than an argument because it is a fact about the machine.
+  This host's own traffic is always captured; traffic forwarded from elsewhere
+  is captured only from a declared source prefix, so a machine sitting on a
+  network it does not own diverts nothing by accident. The claim stays what it
+  always was, the destinations in scope, and the two are separate axes.
+- The score is shared across every caller. A node demoted by one client's
+  request is demoted for all of them, which is the pool doing what it is for:
+  spreading a trusted group's use across the whole set rather than partitioning
+  it. Per-caller standing is deliberately not kept.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

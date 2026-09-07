@@ -22,7 +22,8 @@ impl Route {
             .is_ok_and(|text| !text.trim().is_empty())
     }
 
-    pub fn create(instance: &Instance, claim: &str, span: Span) -> Result<(), Error> {
+    pub fn create(instance: &Instance, span: Span, told: (&str, &[String])) -> Result<(), Error> {
+        let (claim, sources) = told;
         let name = instance.get();
         let priority = instance.priority();
         let number = instance.table();
@@ -42,20 +43,51 @@ impl Route {
                 "rule", "add", "fwmark", &mark, "priority", &spared, "table", "main",
             ],
         )?;
+        Self::divert(instance, claim, "lo")?;
+        for source in sources {
+            Self::spare(instance, claim, source)?;
+        }
+        Ok(())
+    }
+
+    fn divert(instance: &Instance, claim: &str, arriving: &str) -> Result<(), Error> {
+        let priority = instance.priority().to_string();
         run(
             "ip",
             &[
                 "rule",
                 "add",
+                "iif",
+                arriving,
                 "to",
                 claim,
                 "priority",
-                &priority.to_string(),
+                &priority,
                 "table",
-                name,
+                instance.get(),
             ],
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
+    }
+
+    fn spare(instance: &Instance, claim: &str, source: &str) -> Result<(), Error> {
+        let priority = instance.priority().to_string();
+        run(
+            "ip",
+            &[
+                "rule",
+                "add",
+                "from",
+                source,
+                "to",
+                claim,
+                "priority",
+                &priority,
+                "table",
+                instance.get(),
+            ],
+        )
+        .map(|_| ())
     }
 
     pub fn hold(instance: &Instance, address: &str) -> bool {
