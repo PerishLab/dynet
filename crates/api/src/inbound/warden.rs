@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
 const CUSHION: u64 = 120;
+const TRIES: usize = 3;
 const MARK: u16 = 0x7a7a;
 
 struct Call {
@@ -180,20 +181,36 @@ impl Post<'_> {
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
-        let chosen = self
-            .warren
-            .passage(self.pools, wanted, Bearing::Stream)
-            .ok_or_else(|| Error::new(format!("cluster {} offered no node", wanted.get())))?;
-        let carried = through(&chosen, self.warren.upstream, framed);
-        let verdict = match &carried {
-            Ok(_) => Verdict::Answered,
-            Err(fault) => Verdict::Faulted(*fault),
-        };
-        warren::observed(self.pools, &chosen.charge, verdict);
-        match carried {
-            Ok(body) => Ok((chosen.told, body)),
-            Err(fault) => Err(Error::new(format!(
-                "the resolver could not reach a node: {fault:?}"
+        let mut last = None;
+        for _ in 0..TRIES {
+            let Some(chosen) = self.warren.passage(self.pools, wanted, Bearing::Stream) else {
+                break;
+            };
+            let carried = through(&chosen, self.warren.upstream, framed);
+            let verdict = match &carried {
+                Ok(_) => Verdict::Answered,
+                Err(fault) => Verdict::Faulted(*fault),
+            };
+            warren::observed(self.pools, &chosen.charge, verdict);
+            if let Err(fault) = &carried {
+                (self.warren.told)(&format!(
+                    "{} did not answer ({fault:?}), asking another node",
+                    chosen.told
+                ));
+                last = Some(*fault);
+            }
+            if let Ok(body) = carried {
+                return Ok((chosen.told, body));
+            }
+        }
+        match last {
+            Some(fault) => Err(Error::new(format!(
+                "no node of cluster {} answered in {TRIES} tries: {fault:?}",
+                wanted.get()
+            ))),
+            None => Err(Error::new(format!(
+                "cluster {} offered no node",
+                wanted.get()
             ))),
         }
     }
