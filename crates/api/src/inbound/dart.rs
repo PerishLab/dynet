@@ -55,7 +55,7 @@ impl Divert<'_> {
     }
 
     fn tend(&self, stream: TcpStream, held: Held) {
-        let Some(chosen) = self.choose(held.target, Bearing::Stream) else {
+        let Some(chosen) = self.elect(&stream, held.target) else {
             self.tally(|served| served.refused += 1);
             return;
         };

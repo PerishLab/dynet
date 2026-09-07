@@ -103,6 +103,19 @@ are.
   like any other subject, so an operator can route what hides behind one
   provider deliberately; nothing presents it as the destination it conceals.
 
+- A stream on a port where the client speaks TLS first is peeked, never read,
+  before a node is chosen; the kernel's own peek leaves the bytes where they
+  are, so the carried session needs no replay. The peek is bounded, and a
+  destination whose first bytes are repeatedly unreadable stops being peeked at
+  all, because a bound paid on every connection to a protocol this cannot read
+  is a bound paid forever.
+- A name read from the wire decides the cluster and nothing else. It asks the
+  table directly, where an unsniffed connection still falls back to what the
+  ledger issued the address under, and the target carried through the node is
+  unchanged either way. When the two names disagree the disagreement is said
+  out loud, because a routing decision nobody can attribute is the shape this
+  repository has already paid to fix once.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

@@ -1,3 +1,4 @@
+mod peek;
 mod roll;
 
 use super::lasting;
@@ -16,6 +17,7 @@ use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(5);
 const SWEEP: Duration = Duration::from_secs(30);
+const CROWD: usize = 256;
 
 pub struct Divert<'a> {
     pub(super) span: Span,
@@ -27,6 +29,7 @@ pub struct Divert<'a> {
     pub(super) warren: &'a Warren<'a>,
     pub(super) pools: &'a Pools,
     pub(super) served: Mutex<Served>,
+    pub(super) shy: Mutex<std::collections::HashMap<SocketAddrV4, usize>>,
 }
 
 pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error> {
@@ -55,6 +58,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error
         warren,
         pools: &pools,
         served: Mutex::new(Served::default()),
+        shy: Mutex::new(std::collections::HashMap::new()),
     };
     std::thread::scope(|scope| {
         scope.spawn(|| stand(warren, &pools, patience));
@@ -189,6 +193,11 @@ impl Divert<'_> {
         let Ok(mut book) = self.book.lock() else {
             return;
         };
+        if let Ok(mut shy) = self.shy.lock()
+            && shy.len() > CROWD
+        {
+            shy.clear();
+        }
         let gone = book.reap();
         let standing = book.standing();
         drop(book);

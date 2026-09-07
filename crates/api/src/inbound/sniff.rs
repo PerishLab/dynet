@@ -8,6 +8,7 @@ const SERVER: u16 = 0x0000;
 const SPOKEN: u16 = 0x0010;
 const ENCRYPTED: u16 = 0xfe0d;
 const HOST: usize = 0x00;
+const SPOKE: [u16; 1] = [443];
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Sniffed {
@@ -25,6 +26,10 @@ pub enum Refused {
 struct Reader<'a> {
     body: &'a [u8],
     at: usize,
+}
+
+pub fn worth(port: u16) -> bool {
+    SPOKE.contains(&port)
 }
 
 pub fn read(body: &[u8]) -> Result<Sniffed, Refused> {
