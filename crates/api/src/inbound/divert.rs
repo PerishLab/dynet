@@ -76,7 +76,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
         if let Some(seat) = &ushered {
-            scope.spawn(|| divert.usher(seat));
+            scope.spawn(|| divert.usher(seat, transit));
         }
         divert.pump(patience)
     })?;

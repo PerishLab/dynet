@@ -2,6 +2,7 @@ use super::{Divert, Held};
 use dynet_core::Error;
 use socket2::{Domain, Socket, Type};
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::os::fd::IntoRawFd;
 use std::time::Duration;
 
 const REST: Duration = Duration::from_millis(5);
@@ -27,7 +28,7 @@ pub(super) fn seat(port: u16) -> Result<TcpListener, Error> {
 }
 
 impl Divert<'_> {
-    pub(super) fn usher(&self, listener: &TcpListener) {
+    pub(super) fn usher(&self, listener: &TcpListener, transit: u16) {
         let _ = listener.set_nonblocking(true);
         std::thread::scope(|scope| {
             while !self.spent() {
@@ -36,13 +37,13 @@ impl Divert<'_> {
                     continue;
                 };
                 let _ = stream.set_nonblocking(false);
-                scope.spawn(|| self.admit(stream));
+                scope.spawn(|| self.admit(stream, transit));
             }
         });
     }
 
-    fn admit(&self, stream: TcpStream) {
-        let Some(held) = handed(&stream) else {
+    fn admit(&self, stream: TcpStream, transit: u16) {
+        let Some(held) = handed(&stream, transit) else {
             return;
         };
         (self.told())(&format!("{} ushered to {}", held.caller, held.target));
@@ -50,13 +51,25 @@ impl Divert<'_> {
     }
 }
 
-fn handed(stream: &TcpStream) -> Option<Held> {
-    let (SocketAddr::V4(caller), SocketAddr::V4(target)) =
-        (stream.peer_addr().ok()?, stream.local_addr().ok()?)
-    else {
+fn handed(stream: &TcpStream, transit: u16) -> Option<Held> {
+    let SocketAddr::V4(caller) = stream.peer_addr().ok()? else {
+        return None;
+    };
+    let SocketAddr::V4(target) = borne(stream, transit)? else {
         return None;
     };
     Some(shaped(caller, target))
+}
+
+fn borne(stream: &TcpStream, transit: u16) -> Option<SocketAddr> {
+    let seated = stream.local_addr().ok()?;
+    if seated.port() != transit {
+        return Some(seated);
+    }
+    let held = Socket::from(stream.try_clone().ok()?);
+    let told = held.original_dst().ok();
+    let _ = held.into_raw_fd();
+    told?.as_socket()
 }
 
 fn shaped(caller: SocketAddrV4, target: SocketAddrV4) -> Held {

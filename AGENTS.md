@@ -182,6 +182,14 @@ are.
   are installed is reported as stranded and refuses. A bind that fails for want
   of the address is not evidence of a listener and is read as silence.
 
+- What this host sends itself takes the same seat, by a redirect rather than by
+  the kernel handing it over, because a locally produced packet never passes
+  the hook that hands anything over. The rule matches the interface the routing
+  decision already chose, so it says exactly `this was going to the device` with
+  nothing to keep in step; the seat then asks the socket for the destination the
+  redirect replaced. Streams therefore no longer touch the device at all, and
+  what remains on it is datagrams.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

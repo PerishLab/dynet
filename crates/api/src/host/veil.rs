@@ -4,6 +4,13 @@ use std::net::Ipv4Addr;
 
 pub struct Veil;
 
+fn homeward(name: &str, transit: u16) -> String {
+    match transit {
+        0 => String::new(),
+        port => format!("    oifname \"{name}\" tcp dport != 53 redirect to :{port}\n"),
+    }
+}
+
 fn steered(mark: u32, port: u16, sources: &[String]) -> String {
     format!(
         "  chain steering {{\n    type filter hook prerouting priority mangle; policy accept;\n    ip saddr {{ {} }} tcp dport != 53 meta mark set {mark} tproxy ip to :{port} accept\n  }}\n",
@@ -37,8 +44,9 @@ impl Veil {
         let mark = instance.mark();
         let seat = span.seat();
         let mut rules = format!(
-            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n{}  }}\n",
-            capture(seat, port, "")
+            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n{}{}  }}\n",
+            capture(seat, port, ""),
+            homeward(name, transit)
         );
         if !sources.is_empty() {
             let from = format!("ip saddr {{ {} }} ", sources.join(", "));
