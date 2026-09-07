@@ -91,6 +91,18 @@ are.
   refreshed it, because a node scored by an event nobody can name cannot be
   argued about later.
 
+- A server name read from a `ClientHello` is the name the caller is actually
+  reaching for, and it is read rather than inferred. The parser reassembles a
+  hello across TLS records, walks the handshake to the extensions, and asks for
+  the exact count of bytes it still needs so a peek can fetch them; a hello it
+  cannot use at all is refused rather than guessed at. It reads every extension
+  before answering, because whether the `encrypted_client_hello` extension is
+  present decides what the name means.
+- A name carried beside an encrypted client hello is a provider's public name
+  and not the destination's own, and it is reported as such. A rule may name it
+  like any other subject, so an operator can route what hides behind one
+  provider deliberately; nothing presents it as the destination it conceals.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the
