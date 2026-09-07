@@ -137,6 +137,14 @@ are.
   spreading a trusted group's use across the whole set rather than partitioning
   it. Per-caller standing is deliberately not kept.
 
+- Dynet carries no sixth-version address, and it says so only about what it
+  carries. A name a rule claims is answered with no sixth address, so a caller
+  falls back to the fourth version and leaves through a node; a name no rule
+  claims is relayed to the upstream unchanged, sixth-version answer and all, so
+  what this product does not carry keeps whatever the network offers it.
+  Refusing the sixth version for every name would make a whole network's
+  destinations fourth-version-only on the strength of carrying a dozen of them.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

@@ -3,7 +3,7 @@ use super::store::{Key, Recall};
 use super::warren::{self, Chosen, Pools, Warren};
 use crate::host::Route;
 use crate::outbound::Listener;
-use crate::resolver::{self, Answer, Packet, QUAD};
+use crate::resolver::{self, Answer, Packet, QUAD, Query};
 use dynet_core::{Bearing, Decision, Domain, Error, Fault, Ground, Name, Verdict};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
@@ -65,11 +65,7 @@ impl Post<'_> {
         let asking = Packet::new(&call.asked);
         let query = asking.asked()?;
         if query.kind == QUAD {
-            self.speak(&asking.barren(&query), call)?;
-            return Ok(format!(
-                "{} asked for a sixth address, answered none",
-                query.name
-            ));
+            return self.sixth(&asking, call, &query);
         }
         let domain = Domain::new(&query.name)?;
         let decision = self.decide(&domain)?;
@@ -113,6 +109,30 @@ impl Post<'_> {
             decision.cluster().get(),
             decision.ground()
         ))
+    }
+
+    fn sixth(&self, asking: &Packet, call: &Call, query: &Query) -> Result<String, Error> {
+        if self.carried(&query.name) {
+            self.speak(&asking.barren(query), call)?;
+            return Ok(format!(
+                "{} asked for a sixth address, answered none because this carries it",
+                query.name
+            ));
+        }
+        let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
+        self.speak(&plain, call)?;
+        Ok(format!(
+            "{} asked for a sixth address, left to the upstream",
+            query.name
+        ))
+    }
+
+    fn carried(&self, name: &str) -> bool {
+        let Ok(domain) = Domain::new(name) else {
+            return true;
+        };
+        self.decide(&domain)
+            .is_ok_and(|decision| decision.ground() != Ground::Default)
     }
 
     fn after(
