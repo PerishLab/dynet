@@ -44,6 +44,10 @@ are.
 - A `Pool` is what a rule resolves to. Spreading is the default and `Pool::wide`
   says so; affinity is the exception and `Pool::bound` requires naming the
   window it holds for.
+- An instance derives everything it must not share from its own name: the rule
+  priority it installs, the mark it stamps, and the numeric routing table it
+  claims. A constant table number would make two instances two names for one
+  table, each silently carrying the other's routes.
 - Dynet's own traffic is named by a mark it stamps on every socket it opens,
   derived from the instance name. A rule ahead of the instance's own sends
   marked traffic to the main table, and the firewall table accepts it before

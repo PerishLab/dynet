@@ -41,3 +41,29 @@ fn stable() {
         "two instances must not claim one priority"
     );
 }
+
+#[test]
+fn tabled() {
+    let first = Instance::new("dynet0").expect("instance");
+    let again = Instance::new("dynet0").expect("instance");
+    assert_eq!(
+        first.table(),
+        again.table(),
+        "a name always claims one table"
+    );
+    assert!(
+        (41000..42000).contains(&first.table()),
+        "the table must sit in its own reserved span, clear of the kernel's own"
+    );
+    let other = Instance::new("dynet1").expect("instance");
+    assert_ne!(
+        first.table(),
+        other.table(),
+        "two instances must not claim one routing table, or each would carry the other's routes"
+    );
+    assert_ne!(
+        first.table(),
+        first.priority(),
+        "the table and the rule priority are different numbers in different namespaces"
+    );
+}
