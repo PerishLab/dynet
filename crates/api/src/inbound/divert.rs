@@ -1,5 +1,6 @@
 mod peek;
 mod roll;
+mod usher;
 
 use super::lasting;
 use super::warren::{Pools, Served, Warren, gather, renew, stand};
@@ -32,8 +33,8 @@ pub struct Divert<'a> {
     pub(super) shy: Mutex<std::collections::HashMap<SocketAddrV4, usize>>,
 }
 
-pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error> {
-    let (span, patience) = ground;
+pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
+    let (span, patience, transit) = ground;
     let listener = TcpListener::bind((span.seat(), 0))
         .map_err(|error| Error::new(format!("cannot seat the diverter: {error}")))?;
     let seat = listener
@@ -60,10 +61,23 @@ pub fn divert(warren: &Warren, ground: (Span, Duration)) -> Result<Served, Error
         served: Mutex::new(Served::default()),
         shy: Mutex::new(std::collections::HashMap::new()),
     };
+    let ushered = match transit {
+        0 => None,
+        port => Some(usher::seat(port)?),
+    };
+    if let Some(seat) = &ushered {
+        (warren.told)(&format!(
+            "ushering what the kernel hands over on :{transit}"
+        ));
+        let _ = seat;
+    }
     std::thread::scope(|scope| {
         scope.spawn(|| stand(warren, &pools, (span.seat(), patience)));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
+        if let Some(seat) = &ushered {
+            scope.spawn(|| divert.usher(seat));
+        }
         divert.pump(patience)
     })?;
     divert

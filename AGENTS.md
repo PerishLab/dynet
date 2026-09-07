@@ -145,6 +145,15 @@ are.
   Refusing the sixth version for every name would make a whole network's
   destinations fourth-version-only on the strength of carrying a dozen of them.
 
+- A forwarded connection the kernel hands over already carries its own
+  destination: a transparent seat reads it from the socket's own local address,
+  so there is no synthetic peer to rewrite onto, no session to remember and no
+  packet copied through userspace. Everything after that point is the path the
+  device already used, so a name is still read from the hello and a cluster is
+  still chosen the same way. The seat is off unless a port is declared, and the
+  routing and firewall that steer traffic to it are the host's to arrange, not
+  this product's.
+
 - A `Span` is the address range Dynet occupies on the host, injected through
   configuration rather than a flag because it is a fact about the machine. Its
   first address is what the device wears and the middle of its upper half is the

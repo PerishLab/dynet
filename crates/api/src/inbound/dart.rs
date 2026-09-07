@@ -54,7 +54,7 @@ impl Divert<'_> {
         self.end(peer.port());
     }
 
-    fn tend(&self, stream: TcpStream, held: Held) {
+    pub(super) fn tend(&self, stream: TcpStream, held: Held) {
         let Some(chosen) = self.elect(&stream, held.target) else {
             self.tally(|served| served.refused += 1);
             return;

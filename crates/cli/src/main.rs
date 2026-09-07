@@ -86,6 +86,7 @@ struct Config {
     port: u16,
     span: String,
     sources: String,
+    transit: u16,
 }
 
 impl Default for Config {
@@ -95,6 +96,7 @@ impl Default for Config {
             port: 15353,
             span: host::PREFIX.to_string(),
             sources: String::new(),
+            transit: 0,
         }
     }
 }
@@ -150,6 +152,7 @@ fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage
         errand,
         port: config.port,
         span: Span::new(&config.span)?,
+        transit: config.transit,
     })
 }
 

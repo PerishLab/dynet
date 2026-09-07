@@ -30,6 +30,7 @@ pub struct Stage<'a> {
     pub errand: &'a Errand,
     pub port: u16,
     pub span: Span,
+    pub transit: u16,
 }
 
 pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
@@ -38,7 +39,7 @@ pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
         return Ok(ExitCode::SUCCESS);
     }
     let patience = std::time::Duration::from_secs(stage.errand.seconds);
-    let ground = (stage.span, patience);
+    let ground = (stage.span, patience, stage.transit);
     let served = staged(instance, stage, |warren| inbound::divert(warren, ground))?;
     Ok(recount(&served))
 }
