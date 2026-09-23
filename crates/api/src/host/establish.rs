@@ -1,4 +1,4 @@
-use super::{Cleared, Link, Route, Shape, Veil, reclaim, survey};
+use super::{Cleared, Link, Route, Veil, reclaim, survey};
 use dynet_core::{Error, Instance, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,7 +18,7 @@ pub struct Ground<'a> {
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
     let shape = survey()?;
-    if !shape.ownable() || matches!(shape, Shape::Resolved { upstream: false }) {
+    if !shape.sound() {
         return Err(Error::new(format!(
             "dynet will not start: {}",
             shape.explain()

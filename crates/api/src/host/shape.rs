@@ -14,8 +14,8 @@ pub enum Shape {
 }
 
 impl Shape {
-    pub fn ownable(&self) -> bool {
-        matches!(self, Self::Resolved { .. })
+    pub fn sound(&self) -> bool {
+        matches!(self, Self::Resolved { upstream: true } | Self::Plain)
     }
 
     pub fn explain(&self) -> String {
@@ -32,10 +32,9 @@ impl Shape {
             )
             .to_string(),
             Self::Plain => concat!(
-                "/etc/resolv.conf is a plain file no service manages, so dynet has no ",
-                "fragment of its own to own and would have to overwrite the operator's file. ",
-                "Repair: adopt systemd-resolved, or point resolution at a manager that reads ",
-                "a drop-in directory"
+                "/etc/resolv.conf is kept by something other than systemd-resolved; dynet ",
+                "captures lookups in its own firewall table and never writes this file, so ",
+                "it is left to whoever keeps it"
             )
             .to_string(),
             Self::Missing => concat!(

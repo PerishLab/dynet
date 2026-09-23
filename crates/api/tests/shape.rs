@@ -39,8 +39,8 @@ fn empty() {
         "a stub that names only itself must not pass for an upstream"
     );
     assert!(
-        shape.ownable(),
-        "the host is still ownable; it is the lookups that would fail"
+        !shape.sound(),
+        "every lookup the host makes already fails, so dynet has nothing to stand on"
     );
 }
 
@@ -51,6 +51,10 @@ fn plain() {
     fs::write(&resolv, "nameserver 8.8.8.8\n").expect("plain");
     let shape = read(&resolv, &seat.join("resolv.conf")).expect("shape");
     assert_eq!(shape, Shape::Plain);
+    assert!(
+        shape.sound(),
+        "a file another manager keeps is not dynet's to own, and dynet never writes it"
+    );
 }
 
 #[test]
@@ -58,6 +62,10 @@ fn gone() {
     let seat = ground("gone");
     let shape = read(&seat.join("nothing"), &seat.join("resolv.conf")).expect("shape");
     assert_eq!(shape, Shape::Missing);
+    assert!(
+        !shape.sound(),
+        "unreadable resolution is not the same as healthy"
+    );
 }
 
 #[test]

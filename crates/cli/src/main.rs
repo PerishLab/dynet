@@ -180,7 +180,7 @@ impl Boundary {
             return Ok(ExitCode::from(1));
         }
         Ok(
-            match shape.ownable() && stray.links.is_empty() && stray.veils.is_empty() {
+            match shape.sound() && stray.links.is_empty() && stray.veils.is_empty() {
                 true => ExitCode::SUCCESS,
                 false => ExitCode::from(1),
             },

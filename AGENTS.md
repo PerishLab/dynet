@@ -65,6 +65,11 @@ are.
   from a declared source, the same scope that decides what traffic is diverted
   at all. Without a declared source there is no prerouting chain, so nothing
   that is not this host's is answered by accident.
+- The host's resolver is not Dynet's to own. Lookups are captured by the
+  firewall table, and nothing here writes `/etc/resolv.conf`, so a file kept by
+  another manager, such as the one a router's own resolver writes, is left to
+  whoever keeps it. What refuses is a host whose lookups cannot work at all: a
+  resolution that cannot be read, or systemd-resolved with no upstream.
 - A `Table` is the routing policy, declared in its own file and named by
   `--table`. It carries a rule per line of policy, each naming exactly one of
   `exact`, `suffix` or `holds` and the cluster that carries what it matches, and
