@@ -2,7 +2,10 @@
 allow = false
 
 [[grant]]
-paths = ["crates/*/tests/**/*.rs"]
+paths = [
+    "crates/*/src/**/*.rs",
+    "crates/*/tests/**/*.rs",
+]
 syntax = "test"
 
 [[grant]]

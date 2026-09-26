@@ -103,6 +103,10 @@ impl Default for Config {
 
 fn main() -> ExitCode {
     debug_assert_eq!(dynet_api::VERSION, env!("CARGO_PKG_VERSION"));
+    if let Err(error) = plumb::identity!("DYNET") {
+        eprintln!("refused: {error}");
+        return ExitCode::from(2);
+    }
     match run(Cli::parse()) {
         Ok(code) => code,
         Err(error) => {
