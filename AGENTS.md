@@ -201,7 +201,8 @@ are.
 ## Release
 
 `plumb.toml` declares the product `dynet`, its authority and the one binary
-`dynet` for three targets; nothing else publishes. The workspace declares
+`dynet` for Linux alone, since the TUN device, socket marks and transparent
+seats it drives exist nowhere else; nothing else publishes. The workspace declares
 version `0.0.0`, and `crates/cli` carries the release identity region through
 `plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
 release follows Plumb's lifecycle: `plumb release open` cuts `release/<version>`

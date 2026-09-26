@@ -29,11 +29,7 @@ note = "Rust workspace anchors and the toolchain wharf builds with."
 product = "dynet"
 authority = "https://releases.dynet.perish.uk"
 binaries = ["dynet"]
-targets = [
-  "x86_64-unknown-linux-gnu",
-  "aarch64-apple-darwin",
-  "x86_64-pc-windows-msvc",
-]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [workflow.hash.guard]
 "rust" = ["suite://cargo"]
