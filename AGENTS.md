@@ -198,6 +198,20 @@ are.
   the cluster is chosen when the name is asked for, and the name is resolved
   through that cluster.
 
+## Release
+
+`plumb.toml` declares the product `dynet`, its authority and the one binary
+`dynet` for three targets; nothing else publishes. The workspace declares
+version `0.0.0`, and `crates/cli` carries the release identity region through
+`plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
+release follows Plumb's lifecycle: `plumb release open` cuts `release/<version>`
+from a guarded `main`, `plumb release stamp` marks it, and `plumb ship dispatch`
+hands the marker to wharf. A stable's changelog is consigned to the Depot with
+`plumb depot consign --kind changelog`; `plumb release owed` lists what is
+still owed.
+
+## Operating
+
 Run `plumb doctor .` before and after changing repository shape. Before
 landing, run `cargo fmt --all --check`,
 `cargo clippy --locked --workspace --all-targets -- -D warnings`,

@@ -10,32 +10,20 @@ path = ".cargo"
 note = "Cargo registry configuration."
 
 [[layout.seat]]
-path = ".forgejo"
-note = "The canonical forge namespace."
-
-[[layout.seat]]
 path = ".runseal"
 note = "Committed inert Runseal resources."
 
-[[layout.seat]]
-path = ".plumb"
-note = "Plumb-owned records."
+[[layout.file]]
+name = ["README.md"]
+note = "Public introduction."
 
 [[layout.file]]
-name = ["AGENTS.md", "README.md"]
-note = "Repository guidance and public introduction."
+name = [".gitattributes"]
+note = "Git line-ending policy."
 
 [[layout.file]]
-name = ["LICENSE", ".gitignore", ".gitattributes"]
-note = "Repository identity and Git policy."
-
-[[layout.file]]
-name = ["Cargo.toml", "Cargo.lock"]
-note = "Rust workspace anchors."
-
-[[layout.file]]
-name = ["plumb.toml", "ectropy.toml", "runseal.toml"]
-note = "Governance and isolated runtime declarations."
+name = ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]
+note = "Rust workspace anchors and the toolchain wharf builds with."
 
 [release]
 product = "dynet"
