@@ -205,11 +205,8 @@ are.
 seats it drives exist nowhere else; nothing else publishes. The workspace declares
 version `0.0.0`, and `crates/cli` carries the release identity region through
 `plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
-release follows Plumb's lifecycle: `plumb release open` cuts `release/<version>`
-from a guarded `main`, `plumb release stamp` marks it, and `plumb ship dispatch`
-hands the marker to wharf. A stable's changelog is consigned to the Depot with
-`plumb depot consign --kind changelog`; `plumb release owed` lists what is
-still owed.
+release follows Plumb's lifecycle (`plumb release --help`); wharf publishes it.
+A stable's changelog goes to the Depot.
 
 ## Operating
 
