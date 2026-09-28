@@ -222,5 +222,5 @@ exist, so a check made against it passes or fails for reasons that are not the
 code's.
 
 Never work or commit directly in the clean `main` integration checkout after
-the initial repository bootstrap. Use a dedicated task branch and land through
+the initial repository bootstrap. Use a dedicated topic branch and land through
 the repository guard.
