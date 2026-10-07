@@ -22,8 +22,8 @@ name = [".gitattributes"]
 note = "Git line-ending policy."
 
 [[layout.file]]
-name = ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]
-note = "Rust workspace anchors and the toolchain wharf builds with."
+name = ["Cargo.toml", "Cargo.lock"]
+note = "Rust workspace anchors."
 
 [release]
 product = "dynet"
