@@ -1,5 +1,10 @@
 # Agents
 
+Read the canonical [PerishLab delivery governance](https://github.com/PerishLab/.github/blob/main/GOVERNANCE.md)
+at work start and again before delivery or Issue closure. That document owns
+organization-wide Issue, pull-request and acceptance policy; this file keeps
+repository-specific constraints without copying that policy.
+
 Dynet is the operator's personal VPN management tool. It exists because the
 tools it replaces bind a rule to one node at a time, so spreading a rule across
 many nodes there is a rewrite rather than a mode. The routing target here is a
