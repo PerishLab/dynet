@@ -25,8 +25,10 @@ note = "Git line-ending policy."
 name = ["Cargo.toml", "Cargo.lock"]
 note = "Rust workspace anchors."
 
+[identity]
+ns = "dynet"
+
 [release]
-product = "dynet"
 authority = "https://releases.dynet.perish.uk"
 binaries = ["dynet"]
 targets = ["x86_64-unknown-linux-gnu"]
