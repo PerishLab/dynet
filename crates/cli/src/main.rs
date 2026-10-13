@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use dynet_api::host;
 mod node;
+mod observation;
 mod watch;
 
 use dynet_api::outbound::PROBE;
@@ -19,7 +20,8 @@ use std::process::ExitCode;
 #[command(
     name = "dynet",
     version = plumb::version!("DYNET"),
-    about = "Dynet command-line boundary"
+    about = "Dynet command-line boundary",
+    after_help = "Short-command observation is disabled by default. Set [locus] enabled = true in config.toml under ~/.dynet. Buffers use state/locus there. endpoint overrides LOCUS_API, then http://127.0.0.1:43308. Observation failures preserve output and exit status. Continuous divert initializes no observation engine; divert --unit observes only unit generation."
 )]
 struct Cli {
     #[command(flatten)]
@@ -107,24 +109,41 @@ fn main() -> ExitCode {
         eprintln!("refused: {error}");
         return ExitCode::from(2);
     }
-    match run(Cli::parse()) {
+    let cli = Cli::parse();
+    let observer = if matches!(&cli.command, Command::Divert(errand) if !errand.unit) {
+        None
+    } else {
+        observation::Run::start(observation::name(&cli.command))
+    };
+    let code = match run(cli, observer.as_ref()) {
         Ok(code) => code,
         Err(error) => {
             eprintln!("refused: {error}");
             ExitCode::from(2)
         }
+    };
+    if let Some(observer) = observer {
+        observer.finish(if code == ExitCode::SUCCESS {
+            0
+        } else if code == ExitCode::from(1) {
+            1
+        } else {
+            2
+        });
     }
+    code
 }
 
-fn run(cli: Cli) -> Result<ExitCode, Error> {
+#[locus::trace(with = observer.map(observation::Run::view))]
+fn run(cli: Cli, observer: Option<&observation::Run>) -> Result<ExitCode, Error> {
     let config = Config::resolve_with(None, cli.told.partial())
         .map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
-        Command::Doctor => Boundary(instance).doctor(&config),
+        Command::Doctor => Boundary(instance).doctor(&config, observer),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
-        Command::Standing => Boundary(instance).reading(),
+        Command::Standing => Boundary(instance).reading(observer),
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Resolve {
             subscription,
@@ -136,7 +155,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             subscription,
             cluster,
             count,
-        } => node::reach(&subscription, &cluster, count),
+        } => node::reach(&subscription, &cluster, count, observer),
         Command::Spread {
             subscription,
             cluster,
@@ -163,7 +182,12 @@ fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage
 struct Boundary(Instance);
 
 impl Boundary {
-    fn doctor(&self, config: &Config) -> Result<ExitCode, Error> {
+    #[locus::trace(with = observer.map(observation::Run::view))]
+    fn doctor(
+        &self,
+        config: &Config,
+        observer: Option<&observation::Run>,
+    ) -> Result<ExitCode, Error> {
         let shape = host::survey()?;
         println!("resolver: {}", shape.explain());
         println!("instance {}: priority {}", self.0.get(), self.0.priority());
@@ -221,7 +245,8 @@ impl Boundary {
         Ok(ExitCode::SUCCESS)
     }
 
-    fn reading(&self) -> Result<ExitCode, Error> {
+    #[locus::trace(with = observer.map(observation::Run::view))]
+    fn reading(&self, observer: Option<&observation::Run>) -> Result<ExitCode, Error> {
         let path = dynet_api::inbound::standing::path(&self.0);
         let text = std::fs::read_to_string(&path).map_err(|error| {
             Error::new(format!(
