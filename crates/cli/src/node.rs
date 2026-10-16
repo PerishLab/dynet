@@ -8,13 +8,8 @@ use std::time::{Duration, Instant};
 
 const LOOSE: u32 = 0;
 
-#[locus::trace(with = observer.map(crate::observation::Run::view))]
-pub fn reach(
-    path: &PathBuf,
-    cluster: &str,
-    count: usize,
-    observer: Option<&crate::observation::Run>,
-) -> Result<ExitCode, Error> {
+#[locus::trace(with = plumb::observation::view())]
+pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Error> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
     let entries = subscription::read(&text)?;

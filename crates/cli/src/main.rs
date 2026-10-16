@@ -113,9 +113,9 @@ fn main() -> ExitCode {
     let observer = if matches!(&cli.command, Command::Divert(errand) if !errand.unit) {
         None
     } else {
-        observation::Run::start(observation::name(&cli.command))
+        observation::start(observation::name(&cli.command))
     };
-    let code = match run(cli, observer.as_ref()) {
+    let code = match run(cli) {
         Ok(code) => code,
         Err(error) => {
             eprintln!("refused: {error}");
@@ -134,16 +134,16 @@ fn main() -> ExitCode {
     code
 }
 
-#[locus::trace(with = observer.map(observation::Run::view))]
-fn run(cli: Cli, observer: Option<&observation::Run>) -> Result<ExitCode, Error> {
+#[locus::trace(with = plumb::observation::view())]
+fn run(cli: Cli) -> Result<ExitCode, Error> {
     let config = Config::resolve_with(None, cli.told.partial())
         .map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
-        Command::Doctor => Boundary(instance).doctor(&config, observer),
+        Command::Doctor => Boundary(instance).doctor(&config),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
-        Command::Standing => Boundary(instance).reading(observer),
+        Command::Standing => Boundary(instance).reading(),
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Resolve {
             subscription,
@@ -155,7 +155,7 @@ fn run(cli: Cli, observer: Option<&observation::Run>) -> Result<ExitCode, Error>
             subscription,
             cluster,
             count,
-        } => node::reach(&subscription, &cluster, count, observer),
+        } => node::reach(&subscription, &cluster, count),
         Command::Spread {
             subscription,
             cluster,
@@ -182,12 +182,8 @@ fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage
 struct Boundary(Instance);
 
 impl Boundary {
-    #[locus::trace(with = observer.map(observation::Run::view))]
-    fn doctor(
-        &self,
-        config: &Config,
-        observer: Option<&observation::Run>,
-    ) -> Result<ExitCode, Error> {
+    #[locus::trace(with = plumb::observation::view())]
+    fn doctor(&self, config: &Config) -> Result<ExitCode, Error> {
         let shape = host::survey()?;
         println!("resolver: {}", shape.explain());
         println!("instance {}: priority {}", self.0.get(), self.0.priority());
@@ -245,8 +241,8 @@ impl Boundary {
         Ok(ExitCode::SUCCESS)
     }
 
-    #[locus::trace(with = observer.map(observation::Run::view))]
-    fn reading(&self, observer: Option<&observation::Run>) -> Result<ExitCode, Error> {
+    #[locus::trace(with = plumb::observation::view())]
+    fn reading(&self) -> Result<ExitCode, Error> {
         let path = dynet_api::inbound::standing::path(&self.0);
         let text = std::fs::read_to_string(&path).map_err(|error| {
             Error::new(format!(
