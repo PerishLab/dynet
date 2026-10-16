@@ -74,6 +74,11 @@ fn buffered() {
             10
         );
     }
+    assert!(
+        atoms
+            .iter()
+            .all(|atom| atom["context"].get("dynet.fault").is_none())
+    );
     let text = serde_json::to_string(&atoms).unwrap();
     for private in [
         "private-instance",
@@ -114,4 +119,27 @@ fn isolated() {
     assert_eq!(result.status.code(), Some(0));
     assert!(result.stdout.is_empty());
     assert!(!result.stderr.is_empty());
+}
+
+#[test]
+fn parity() {
+    let names = [
+        "doctor",
+        "up",
+        "down",
+        "standing",
+        "resolve",
+        "reach",
+        "spread",
+        "exit",
+        "divert.unit",
+    ];
+    let fixture = Fixture::new();
+    let off: Vec<_> = names.iter().map(|name| fixture.run(name)).collect();
+    fixture.configure(ENABLED);
+    for (name, baseline) in names.iter().zip(&off) {
+        let on = fixture.run(name);
+        assert_eq!(on.status.code(), baseline.status.code(), "{name}");
+        assert_eq!(on.stdout, baseline.stdout, "{name}");
+    }
 }
