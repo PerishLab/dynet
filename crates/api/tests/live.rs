@@ -12,7 +12,7 @@ fn survey() -> Option<(usize, dynet_api::Catalog)> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live subscription; needs DYNET_SUBSCRIPTION"]
 fn accounts() {
     let (entries, catalog) = survey().expect("set DYNET_SUBSCRIPTION to a saved subscription");
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();

@@ -17,7 +17,7 @@ fn upstream() -> Option<String> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live resolver; needs DYNET_UPSTREAM and DYNET_NAME"]
 fn carries() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
@@ -30,7 +30,7 @@ fn carries() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live resolver; needs DYNET_UPSTREAM and DYNET_NAME"]
 fn hurries() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
@@ -51,7 +51,7 @@ fn hurries() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live resolver; needs DYNET_UPSTREAM and DYNET_NAME"]
 fn follows() {
     let held = upstream().expect("set DYNET_UPSTREAM to a reachable resolver");
     let name = env::var("DYNET_NAME").expect("set DYNET_NAME to a node hostname");
