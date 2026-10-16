@@ -10,7 +10,7 @@ fn field(line: &str, name: &str) -> Option<String> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live subscription; needs DYNET_SUBSCRIPTION"]
 fn reaches() {
     let path = env::var("DYNET_SUBSCRIPTION").expect("set DYNET_SUBSCRIPTION");
     let want = env::var("DYNET_NODE").unwrap_or_else(|_| "0".to_string());
