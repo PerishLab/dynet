@@ -33,7 +33,7 @@ fn unbase(text: &str) -> Option<Vec<u8>> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "live exit; needs DYNET_EXIT_SECRET and DYNET_EXIT_SEAT"]
 fn reaches() {
     let secret = secret().expect("set DYNET_EXIT_SECRET to the exit's key");
     let seat = env::var("DYNET_EXIT_SEAT").expect("set DYNET_EXIT_SEAT to host:port");
