@@ -136,8 +136,8 @@ fn main() -> ExitCode {
 
 #[locus::trace(with = plumb::observation::view())]
 fn run(cli: Cli) -> Result<ExitCode, Error> {
-    let config = Config::resolve_with(None, cli.told.partial())
-        .map_err(|error| Error::new(error.to_string()))?;
+    let config =
+        Config::layered(None, cli.told.partial()).map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     match cli.command {
         Command::Doctor => Boundary(instance).doctor(&config),
