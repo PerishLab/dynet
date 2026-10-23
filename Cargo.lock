@@ -298,6 +298,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "dynet"
 version = "0.0.0"
 dependencies = [
@@ -488,9 +494,9 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "locus"
-version = "0.13.0"
+version = "0.14.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "40666deea22d6694c5632a6b75cbdd9236f1962a3857fafd3a0625d8129284b2"
+checksum = "8a4f1d63cdbc0d1dc563ab4e592b0f67ff3459bc007a3964db4b36aeb0c80d4b"
 dependencies = [
  "getrandom 0.3.4",
  "locus-macro",
@@ -500,9 +506,9 @@ dependencies = [
 
 [[package]]
 name = "locus-macro"
-version = "0.13.0"
+version = "0.14.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "751074fb31f12465a949fa60734ddaac9ce57dc9a45a04dc0695136685f8b8eb"
+checksum = "0f6d8373393b62f4f2a2bdf7ea42b4bddf3b9a4719d7d52fb9679726c73130ce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -566,12 +572,13 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "plumb"
-version = "0.103.7"
+version = "0.107.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "b510c34bb588cce0da60bc2cba9f6bda08bb05a4f9427dc9550db08b5420e5cc"
+checksum = "5533f9f0a40a71b2b8d0fc2381f8a97dafa7a79031b5249ef574b4f9907dc9cd"
 dependencies = [
  "base64",
  "clap",
+ "dunce",
  "locus",
  "object",
  "pin-project-lite",
@@ -585,13 +592,14 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "toml_edit 0.23.10+spec-1.0.0",
  "which",
+ "winapi-util",
 ]
 
 [[package]]
 name = "plumb-macro"
-version = "0.103.7"
+version = "0.107.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "bb9cc146aa3c1ce61ec44abd9d043c8a6784f8fd75e0d6e2622b0858d323022e"
+checksum = "291c5ca193d7456b3fffb70b0d790b57a8775865fd7fff5f5c6a86e297718fba"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1026,6 +1034,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bae2f2b2b816647a1cab1acc91f5bd20812d53cb344382635ec2181940c8034f"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "winapi-util"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+dependencies = [
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
