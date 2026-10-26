@@ -1,10 +1,24 @@
 use crate::error::Error;
 use crate::{Affinity, Bearing, Capability, Label};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const DIRECT: &str = "direct";
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Name(String);
+
+impl<'de> Deserialize<'de> for Name {
+    fn deserialize<D: Deserializer<'de>>(told: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(told)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for Name {
+    fn serialize<S: Serializer>(&self, told: S) -> Result<S::Ok, S::Error> {
+        told.serialize_str(&self.0)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Node {

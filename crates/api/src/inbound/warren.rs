@@ -1,5 +1,6 @@
 use super::store::Store;
 use super::warden;
+use crate::host::Journal;
 use crate::manifest::{self, Loaded};
 use crate::outbound::{Book, Passage, Roster};
 use dynet_core::{
@@ -50,6 +51,7 @@ pub struct Warren<'a> {
     pub instance: &'a Instance,
     pub held: &'a RwLock<Arc<Held>>,
     pub ledger: &'a Mutex<Ledger>,
+    pub journal: &'a Journal,
     pub source: &'a Path,
     pub reload: &'a AtomicBool,
     pub port: u16,
@@ -99,31 +101,12 @@ impl Warren<'_> {
     pub fn decide(&self, sight: &Sight) -> Option<Decision> {
         let held = self.current();
         let ledger = self.ledger.lock().ok()?;
-        Some(decide(
-            held.loaded.manifest(),
-            &ledger,
-            sight,
-            Instant::now(),
-        ))
+        Some(decide(held.loaded.manifest(), &ledger, sight))
     }
 
     pub fn claimed(&self, domain: &Domain) -> Option<Name> {
         let held = self.current();
         held.loaded.manifest().table().claimed(domain).cloned()
-    }
-
-    pub fn forget(&self) {
-        let Ok(mut ledger) = self.ledger.lock() else {
-            return;
-        };
-        let gone = ledger.sweep(Instant::now());
-        drop(ledger);
-        for address in &gone {
-            crate::host::Route::release(self.instance, &address.to_string());
-        }
-        if !gone.is_empty() {
-            (self.told)(&format!("released {} expired routes", gone.len()));
-        }
     }
 
     pub fn passage(&self, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
@@ -191,6 +174,7 @@ impl Warren<'_> {
             Err(poisoned) => *poisoned.into_inner() = Arc::new(held),
         }
         (self.told)(&format!("manifest replaced, {count} rules standing"));
+        self.rejudged();
     }
 }
 

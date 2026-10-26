@@ -24,5 +24,6 @@ pub(crate) fn name(command: &crate::Command) -> &'static str {
         crate::Command::Spread { .. } => "spread",
         crate::Command::Exit { .. } => "exit",
         crate::Command::Carry(_) => "carry",
+        crate::Command::Flush(_) => "flush",
     }
 }

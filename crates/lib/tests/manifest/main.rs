@@ -1,4 +1,5 @@
 mod decide;
+mod judge;
 mod read;
 
 use dynet_core::Manifest;

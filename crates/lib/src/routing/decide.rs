@@ -2,7 +2,6 @@ use super::domain::Domain;
 use super::ledger::Ledger;
 use crate::{Bearing, Form, Manifest, Name};
 use std::net::IpAddr;
-use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Told {
@@ -88,13 +87,15 @@ impl Decision {
     }
 }
 
-pub fn decide(manifest: &Manifest, ledger: &Ledger, sight: &Sight, now: Instant) -> Decision {
+pub fn decide(manifest: &Manifest, ledger: &Ledger, sight: &Sight) -> Decision {
     let table = manifest.table();
-    let issued = ledger.lookup(sight.address, now);
+    let issued = ledger.lookup(sight.address);
     if let Some(told) = &sight.told
         && let Some(cluster) = table.claimed(told.domain())
     {
-        let aim = issued.is_none().then(|| told.domain().clone());
+        let aim = issued
+            .is_none_or(|issue| issue.released())
+            .then(|| told.domain().clone());
         return reach(manifest, cluster, sight.bearing, (Ground::Named, aim));
     }
     if let Some(cluster) = table.held(sight.address) {
@@ -104,6 +105,9 @@ pub fn decide(manifest: &Manifest, ledger: &Ledger, sight: &Sight, now: Instant)
         return direct(Ground::Unclaimed);
     }
     if let Some(issue) = issued {
+        if issue.released() {
+            return direct(Ground::Issued);
+        }
         return reach(
             manifest,
             issue.cluster(),

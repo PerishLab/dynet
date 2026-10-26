@@ -13,8 +13,8 @@ pub use manifest::{
 };
 pub use pool::{Affinity, Blame, Fault, Policy, Selector, Standing, Verdict};
 pub use routing::{
-    Course, Decision, Domain, Ground, Issue, Ledger, Range, Refusal, Rule, Sight, Span, Subject,
-    Table, Told, decide, reserved, spared, usable,
+    Course, Decision, Domain, Ground, Issue, Ledger, Range, Refusal, Rule, Sieve, Sight, Span,
+    Subject, Table, Tally, Told, decide, reserved, spared, usable,
 };
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

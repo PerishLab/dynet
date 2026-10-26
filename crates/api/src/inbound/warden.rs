@@ -1,16 +1,15 @@
 use super::lasting;
 use super::store::{Key, Recall};
 use super::warren::{self, Chosen, Warren};
-use crate::host::Route;
+use crate::host::{Route, clock};
 use crate::outbound::Listener;
 use crate::resolver::{self, Answer, Packet, QUAD, Query};
-use dynet_core::{Bearing, Domain, Error, Fault, Issue, Name, Verdict, spared};
+use dynet_core::{Bearing, Domain, Error, Fault, Name, Verdict, spared};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
-const CUSHION: u64 = 120;
 const TRIES: usize = 3;
 const MARK: u16 = 0x7a7a;
 
@@ -150,11 +149,12 @@ impl Post<'_> {
     }
 
     fn assure(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<(), Error> {
-        let now = Instant::now();
         let ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
-        let live = found
-            .iter()
-            .all(|item| ledger.lookup(IpAddr::V4(item.address), now).is_some());
+        let live = found.iter().all(|item| {
+            ledger
+                .lookup(IpAddr::V4(item.address))
+                .is_some_and(|issue| !issue.released())
+        });
         drop(ledger);
         if live {
             return Ok(());
@@ -193,20 +193,18 @@ impl Post<'_> {
 
     fn keep(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<usize, Error> {
         let life = found.iter().map(|item| u64::from(item.life)).max();
-        let expiry = Instant::now() + Duration::from_secs(life.unwrap_or_default() + CUSHION);
-        let addresses: Vec<IpAddr> = found.iter().map(|item| IpAddr::V4(item.address)).collect();
+        let told = (life.unwrap_or_default(), clock());
         let mut ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
         let mut held = 0;
-        for address in &addresses {
-            let issue = Issue::new(domain.clone(), cluster.clone(), expiry);
-            if ledger.record(*address, issue) {
+        for item in found {
+            let address = IpAddr::V4(item.address);
+            if ledger.record(address, (domain, cluster), told) {
+                Route::hold(self.warren.instance, &address.to_string());
                 held += 1;
             }
         }
         drop(ledger);
-        for address in &addresses {
-            Route::hold(self.warren.instance, &address.to_string());
-        }
+        self.warren.journal.stain();
         Ok(held)
     }
 

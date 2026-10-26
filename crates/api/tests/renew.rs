@@ -1,10 +1,13 @@
+use dynet_api::host::Journal;
 use dynet_api::inbound::{Held, Store, Warren};
 use dynet_api::manifest;
 use dynet_api::outbound::Book;
-use dynet_core::{Instance, Ledger, Name};
+use dynet_core::{Domain, Instance, Ledger, Name};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
+
+const ADDRESS: &str = "203.0.113.7";
 
 fn manifest(rules: Value) -> String {
     json!({
@@ -29,14 +32,24 @@ fn renews() {
     .expect("write");
     let loaded = manifest::read(&source).expect("manifest");
     let held = RwLock::new(Arc::new(Held::new(loaded, None).expect("held")));
-    let ledger = Mutex::new(Ledger::new());
+    let mut issued = Ledger::default();
+    let domain = Domain::new("www.a.com").expect("domain");
+    let former = Name::new("former").expect("name");
+    issued.record(
+        ADDRESS.parse().expect("address"),
+        (&domain, &former),
+        (60, 0),
+    );
+    let ledger = Mutex::new(issued);
     let instance = Instance::new("dynet9").expect("instance");
+    let journal = Journal::new(&instance, Some(seat.path().join("ledger")));
     let spoken = Mutex::new(Vec::new());
     let told = |line: &str| spoken.lock().expect("lines").push(line.to_string());
     let warren = Warren {
         instance: &instance,
         held: &held,
         ledger: &ledger,
+        journal: &journal,
         source: &source,
         reload: &AtomicBool::new(false),
         port: 0,
@@ -70,4 +83,12 @@ fn renews() {
         "{lines:?}"
     );
     assert!(lines[1].starts_with("manifest replaced"), "{lines:?}");
+    assert!(
+        lines[2].starts_with("ledger re-judged moved=1 released=0"),
+        "{lines:?}"
+    );
+    let ledger = ledger.lock().expect("ledger");
+    let moved = ledger.lookup(ADDRESS.parse().expect("address"));
+    assert_eq!(moved.expect("issued").cluster(), &proxy);
+    assert!(journal.stained(), "a re-judged ledger is saved");
 }
