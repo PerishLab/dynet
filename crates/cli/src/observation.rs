@@ -25,5 +25,7 @@ pub(crate) fn name(command: &crate::Command) -> &'static str {
         crate::Command::Exit { .. } => "exit",
         crate::Command::Carry(_) => "carry",
         crate::Command::Flush(_) => "flush",
+        #[cfg(windows)]
+        crate::Command::Service(_) => "service",
     }
 }

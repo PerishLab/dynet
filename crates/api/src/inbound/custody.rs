@@ -1,6 +1,6 @@
 use super::warren::Warren;
 use crate::host::{Route, clock};
-use dynet_core::{Error, Ledger, Sieve, Tally};
+use dynet_core::{Error, Ledger, Range, Sieve, Subject, Tally};
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::sync::MutexGuard;
@@ -22,10 +22,10 @@ impl Warren<'_> {
 
     pub fn settle(&self) -> Result<(), Error> {
         let ledger = self.lock()?;
-        let wanted: BTreeSet<IpAddr> = ledger.addresses().collect();
+        let wanted = self.wanted(&ledger);
         let settled = Route::settle(self.instance, &wanted)?;
         (self.told)(&format!(
-            "settled {} issued addresses, {} added, {} dropped",
+            "settled {} issued addresses and held ranges, {} added, {} dropped",
             wanted.len(),
             settled.added,
             settled.dropped
@@ -88,8 +88,23 @@ impl Warren<'_> {
         line
     }
 
+    fn wanted(&self, ledger: &Ledger) -> BTreeSet<Range> {
+        let held = self.current();
+        let ranges = held
+            .loaded
+            .manifest()
+            .table()
+            .rules()
+            .iter()
+            .filter_map(|rule| match rule.subject() {
+                Subject::Holds(range) => Some(range.masked()),
+                _ => None,
+            });
+        ledger.addresses().map(Range::host).chain(ranges).collect()
+    }
+
     fn project(&self, ledger: &Ledger) {
-        let wanted: BTreeSet<IpAddr> = ledger.addresses().collect();
+        let wanted = self.wanted(ledger);
         if let Err(error) = Route::settle(self.instance, &wanted) {
             (self.told)(&format!("settle failed: {error}"));
         }

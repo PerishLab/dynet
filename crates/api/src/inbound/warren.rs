@@ -8,9 +8,9 @@ use dynet_core::{
     Selector, Sight, Verdict, decide, usable,
 };
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
+use std::net::UdpSocket;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -54,6 +54,7 @@ pub struct Warren<'a> {
     pub journal: &'a Journal,
     pub source: &'a Path,
     pub reload: &'a AtomicBool,
+    pub halt: &'a AtomicBool,
     pub port: u16,
     pub upstream: &'a str,
     pub book: &'a Book,
@@ -91,6 +92,10 @@ impl Held {
 }
 
 impl Warren<'_> {
+    pub fn halted(&self) -> bool {
+        self.halt.load(Ordering::Relaxed)
+    }
+
     pub fn current(&self) -> Arc<Held> {
         match self.held.read() {
             Ok(held) => Arc::clone(&held),
@@ -200,8 +205,8 @@ fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
         .choose(bearing, Instant::now())
 }
 
-pub fn stand(warren: &Warren, ground: (Ipv4Addr, Duration)) {
-    let Err(error) = warden::attend(warren, ground) else {
+pub fn stand(warren: &Warren, span: Duration, socket: &UdpSocket) {
+    let Err(error) = warden::attend(warren, span, socket) else {
         return;
     };
     (warren.told)(&format!("the resolver refused to start: {error}"));

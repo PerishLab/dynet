@@ -1,22 +1,22 @@
-mod establish;
 mod fragment;
 mod journal;
-mod link;
-mod reclaim;
-mod route;
-mod settle;
-mod shape;
-mod veil;
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
 
-pub use establish::{Ground, Standing, establish};
 pub use fragment::{Fragment, Held, MARKER, held};
 pub use journal::{Journal, clock};
-pub use link::Link;
-pub use reclaim::{Cleared, reclaim, sweep};
-pub use route::Route;
-pub use settle::Settled;
-pub use shape::{Shape, read, survey};
-pub use veil::Veil;
+#[cfg(not(windows))]
+pub use linux::{
+    Cleared, Ground, Link, Route, Settled, Shape, Standing, Veil, establish, kept, passing, read,
+    reclaim, survey, sweep,
+};
+#[cfg(windows)]
+pub use windows::{
+    Cleared, Ground, Link, Route, Settled, Standing, Veil, establish, kept, passing, program,
+    reclaim,
+};
 
 use dynet_core::Error;
 use std::io::Write;
@@ -31,8 +31,9 @@ pub fn run(program: &str, arguments: &[&str]) -> Result<String, Error> {
         .map_err(|error| Error::new(format!("cannot run {program}: {error}")))?;
     if !output.status.success() {
         return Err(Error::new(format!(
-            "{program} {} refused: {}",
+            "{program} {} refused: {}{}",
             arguments.join(" "),
+            String::from_utf8_lossy(&output.stdout).trim(),
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }

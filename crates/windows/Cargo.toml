@@ -1,0 +1,16 @@
+[package]
+name = "dynet-windows"
+description = "The Windows host mechanisms Dynet stands on around its packet device."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "dynet_windows"
+path = "src/lib.rs"
+
+[target.'cfg(windows)'.dependencies]
+sha2.workspace = true
+windows-sys.workspace = true

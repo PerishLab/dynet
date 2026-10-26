@@ -12,7 +12,7 @@ pub fn reach(seat: SocketAddr, mark: u32, patience: Duration) -> Result<TcpStrea
     let domain = Domain::for_address(seat);
     let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))
         .map_err(|error| Error::new(format!("cannot open a node socket: {error}")))?;
-    stamp(&socket, mark)?;
+    stamp(&socket, mark, domain == Domain::IPV6)?;
     rouse(&socket)?;
     socket
         .connect_timeout(&seat.into(), patience)
@@ -23,7 +23,7 @@ pub fn reach(seat: SocketAddr, mark: u32, patience: Duration) -> Result<TcpStrea
 pub fn marked(mark: u32) -> Result<UdpSocket, Error> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
         .map_err(|error| Error::new(format!("cannot open a resolving socket: {error}")))?;
-    stamp(&socket, mark)?;
+    stamp(&socket, mark, false)?;
     socket
         .bind(&SocketAddr::from(([0, 0, 0, 0], 0)).into())
         .map_err(|error| Error::new(format!("cannot seat a resolving socket: {error}")))?;
@@ -41,13 +41,20 @@ fn rouse(socket: &Socket) -> Result<(), Error> {
     })
 }
 
-fn stamp(socket: &Socket, mark: u32) -> Result<(), Error> {
+fn stamp(socket: &Socket, mark: u32, six: bool) -> Result<(), Error> {
     if mark == 0 {
         return Ok(());
     }
+    #[cfg(not(windows))]
+    let _ = six;
     #[cfg(target_os = "linux")]
     let made = socket.set_mark(mark);
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    let made = dynet_windows::uplink().and_then(|index| {
+        use std::os::windows::io::AsRawSocket;
+        dynet_windows::unicast(socket.as_raw_socket(), index, six)
+    });
+    #[cfg(not(any(target_os = "linux", windows)))]
     let made = {
         let _ = socket;
         Err::<(), _>(std::io::Error::from(ErrorKind::Unsupported))

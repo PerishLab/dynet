@@ -384,6 +384,7 @@ dependencies = [
  "clap",
  "dynet-api",
  "dynet-core",
+ "dynet-windows",
  "locus",
  "plumb",
  "serde",
@@ -402,6 +403,7 @@ dependencies = [
  "chacha20poly1305",
  "dynet-core",
  "dynet-tun",
+ "dynet-windows",
  "ed25519-dalek",
  "hmac",
  "md-5",
@@ -429,6 +431,14 @@ name = "dynet-tun"
 version = "0.0.0"
 dependencies = [
  "libc",
+ "sha2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "dynet-windows"
+version = "0.0.0"
+dependencies = [
  "sha2",
  "windows-sys 0.61.2",
 ]
@@ -647,9 +657,9 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "locus"
-version = "0.14.0"
+version = "0.15.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "8a4f1d63cdbc0d1dc563ab4e592b0f67ff3459bc007a3964db4b36aeb0c80d4b"
+checksum = "666bef82ecb121b251f10a2838a8515fb65c6a0ee7caf9fab676bd58b1060000"
 dependencies = [
  "getrandom 0.3.4",
  "locus-macro",
@@ -659,9 +669,9 @@ dependencies = [
 
 [[package]]
 name = "locus-macro"
-version = "0.14.0"
+version = "0.15.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "0f6d8373393b62f4f2a2bdf7ea42b4bddf3b9a4719d7d52fb9679726c73130ce"
+checksum = "c8a95acd43d814089456d147d0d4d98d52b78f0ac2e85e1f08d5b5ee57739548"
 dependencies = [
  "proc-macro2",
  "quote",

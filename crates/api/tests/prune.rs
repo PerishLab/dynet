@@ -61,3 +61,22 @@ fn emptied() {
     let pruned = prune(&reply(), |_| true).expect("prune").expect("pruned");
     assert!(read(&pruned).expect("answers").is_empty());
 }
+
+#[test]
+fn hints() {
+    for kind in [1u16, 2, 16, 28, 64, 65] {
+        let mut body = question();
+        body[2..4].copy_from_slice(&[1, 0]);
+        body[6..12].fill(0);
+        let end = body.len() - 4;
+        body[end..end + 2].copy_from_slice(&kind.to_be_bytes());
+        let packet = dynet_api::resolver::Packet::new(&body);
+        let query = packet.asked().expect("query");
+        assert_eq!(query.hints(), matches!(kind, 28 | 64 | 65));
+        let answer = packet.barren(&query);
+        assert_eq!(&answer[..2], &body[..2], "the transaction stays bound");
+        assert_eq!(&answer[2..4], &[0x81, 0x80], "NOERROR");
+        assert_eq!(&answer[6..12], &[0; 6], "no hints or additional records");
+        assert_eq!(&answer[12..], &body[12..], "the question is preserved");
+    }
+}

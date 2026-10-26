@@ -24,6 +24,12 @@ pub struct Query {
     pub span: usize,
 }
 
+impl Query {
+    pub fn hints(&self) -> bool {
+        matches!(self.kind, QUAD | 64 | 65)
+    }
+}
+
 pub struct Packet<'a> {
     body: &'a [u8],
 }

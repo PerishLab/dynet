@@ -1,7 +1,7 @@
 use crate::error::Error;
 use std::net::IpAddr;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Range {
     base: IpAddr,
     prefix: u8,
@@ -19,6 +19,35 @@ impl Range {
             )));
         }
         Ok(Self { base, prefix })
+    }
+
+    pub fn host(address: IpAddr) -> Self {
+        let prefix = match address {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        Self {
+            base: address,
+            prefix,
+        }
+    }
+
+    pub fn masked(self) -> Self {
+        let base = match self.base {
+            IpAddr::V4(base) => {
+                let mask = u32::MAX
+                    .checked_shl(32 - u32::from(self.prefix))
+                    .unwrap_or(0);
+                IpAddr::from((u32::from(base) & mask).to_be_bytes())
+            }
+            IpAddr::V6(base) => {
+                let mask = u128::MAX
+                    .checked_shl(128 - u32::from(self.prefix))
+                    .unwrap_or(0);
+                IpAddr::from((u128::from(base) & mask).to_be_bytes())
+            }
+        };
+        Self { base, ..self }
     }
 
     pub fn base(self) -> IpAddr {

@@ -1,10 +1,10 @@
+use super::super::{feed, run};
 use super::route::Route;
-use super::{feed, run};
-use dynet_core::{Error, Instance};
+use dynet_core::{Error, Instance, Range};
 use std::collections::BTreeSet;
-use std::net::IpAddr;
 
 const ABSENT: &str = "FIB table does not exist";
+const PROTO: &str = "static";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Settled {
@@ -13,19 +13,24 @@ pub struct Settled {
 }
 
 impl Route {
-    pub fn settle(instance: &Instance, wanted: &BTreeSet<IpAddr>) -> Result<Settled, Error> {
+    pub fn settle(instance: &Instance, wanted: &BTreeSet<Range>) -> Result<Settled, Error> {
+        if wanted.iter().any(|range| range.base().is_ipv6()) {
+            return Err(Error::new("IPv6 capture is not offered on this host"));
+        }
         let present = Self::shown(instance)?;
         let name = instance.get();
-        let added: Vec<&IpAddr> = wanted.difference(&present).collect();
-        let dropped: Vec<&IpAddr> = present.difference(wanted).collect();
+        let added: Vec<&Range> = wanted.difference(&present).collect();
+        let dropped: Vec<&Range> = present.difference(wanted).collect();
         let mut lines = String::new();
-        for address in &added {
+        for range in &added {
             lines.push_str(&format!(
-                "route replace {address}/32 dev {name} table {name}\n"
+                "route replace {} {}\n",
+                spoken(**range),
+                owned(name)
             ));
         }
-        for address in &dropped {
-            lines.push_str(&format!("route del {address}/32 dev {name} table {name}\n"));
+        for range in &dropped {
+            lines.push_str(&format!("route del {} {}\n", spoken(**range), owned(name)));
         }
         if !lines.is_empty() {
             feed("ip", &["-force", "-batch", "-"], &lines)?;
@@ -45,9 +50,10 @@ impl Route {
         })
     }
 
-    pub fn shown(instance: &Instance) -> Result<BTreeSet<IpAddr>, Error> {
+    pub fn shown(instance: &Instance) -> Result<BTreeSet<Range>, Error> {
         let name = instance.get();
-        let text = match run("ip", &["-4", "route", "show", "table", name]) {
+        let shown = ["-4", "route", "show", "table", name, "proto", PROTO];
+        let text = match run("ip", &shown) {
             Ok(text) => text,
             Err(error) if error.to_string().contains(ABSENT) => String::new(),
             Err(error) => return Err(error),
@@ -57,7 +63,22 @@ impl Route {
             .lines()
             .filter(|line| format!("{line} ").contains(&device))
             .filter_map(|line| line.split_whitespace().next())
-            .filter_map(|head| head.parse::<IpAddr>().ok())
+            .filter_map(read)
             .collect())
+    }
+}
+
+pub(super) fn owned(name: &str) -> String {
+    format!("dev {name} table {name} proto {PROTO}")
+}
+
+fn spoken(range: Range) -> String {
+    format!("{}/{}", range.base(), range.prefix())
+}
+
+fn read(head: &str) -> Option<Range> {
+    match head.contains('/') {
+        true => Range::read(head).ok(),
+        false => head.parse().ok().map(Range::host),
     }
 }
