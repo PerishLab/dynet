@@ -1,11 +1,13 @@
+mod worker;
+
+pub(crate) use worker::serve;
+
 use crate::Config;
-use crate::watch::{self, Errand, Stage};
-use dynet_api::host::{self, Journal, clock};
+use crate::watch::Errand;
+use dynet_api::host;
 use dynet_core::{Error, Instance, Span};
-use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Mutex;
 
 #[derive(clap::Subcommand)]
 pub(crate) enum Service {
@@ -65,8 +67,8 @@ impl Boundary {
         Ok(ExitCode::SUCCESS)
     }
 
-    pub(crate) fn reading(&self) -> Result<ExitCode, Error> {
-        let path = dynet_api::inbound::standing::path(&self.0);
+    pub(crate) fn reading(&self, state: &host::State) -> Result<ExitCode, Error> {
+        let path = dynet_api::inbound::standing::path(&self.0, state);
         let text = std::fs::read_to_string(&path)
             .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
         for line in text.lines().filter(|line| *line != host::MARKER) {
@@ -75,14 +77,24 @@ impl Boundary {
         Ok(ExitCode::SUCCESS)
     }
 
-    pub(crate) fn service(&self, config: &Config, service: &Service) -> Result<ExitCode, Error> {
+    pub(crate) fn service(
+        &self,
+        config: &Config,
+        service: &Service,
+        state: &host::State,
+    ) -> Result<ExitCode, Error> {
         match service {
-            Service::Install(errand) => self.install(config, errand),
+            Service::Install(errand) => self.install(config, errand, state),
             Service::Remove => self.remove(),
         }
     }
 
-    fn install(&self, config: &Config, errand: &Errand) -> Result<ExitCode, Error> {
+    fn install(
+        &self,
+        config: &Config,
+        errand: &Errand,
+        state: &host::State,
+    ) -> Result<ExitCode, Error> {
         if !config.sources.is_empty() || config.transit != 0 {
             return Err(Error::new(
                 "capturing forwarded traffic is not offered on Windows",
@@ -103,10 +115,11 @@ impl Boundary {
         })?;
         let name = self.0.get();
         let mut line = format!(
-            "\"{}\" --instance {name} --port {} --span {} divert --service --manifest \"{}\" --upstream {} --claim {} --retain {} --seconds 0",
+            "\"{}\" --instance {name} --port {} --span {} --state {} divert --service --manifest \"{}\" --upstream {} --claim {} --retain {} --seconds 0",
             program.display(),
             config.port,
             config.span,
+            quoted(&plain(state.root())),
             plain(&manifest),
             quoted(&errand.upstream),
             quoted(&errand.claim),
@@ -199,80 +212,6 @@ fn quoted(value: &str) -> String {
     quoted.extend(std::iter::repeat_n('\\', slashes * 2));
     quoted.push('"');
     quoted
-}
-
-pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
-    let instance = instance.clone();
-    let errand = stage.errand.clone();
-    let (port, span) = (stage.port, stage.span);
-    let name = instance.get().to_string();
-    dynet_windows::serve(&name, move || {
-        let stage = Stage {
-            errand: &errand,
-            port,
-            span,
-            transit: 0,
-        };
-        work(&instance, &stage)
-    })
-    .map_err(|error| Error::new(format!("the service was not served: {error}")))?;
-    Ok(ExitCode::SUCCESS)
-}
-
-fn work(instance: &Instance, stage: &Stage) -> u32 {
-    let log = Journal::new(instance, None).path().with_extension("log");
-    let Some(parent) = log.parent() else { return 1 };
-    if std::fs::create_dir_all(parent).is_err() {
-        return 1;
-    }
-    let file = match std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log)
-    {
-        Ok(file) => file,
-        Err(_) => return 1,
-    };
-    let file = Mutex::new(file);
-    let told = |line: &str| {
-        if let Ok(mut held) = file.lock() {
-            let _ = writeln!(held, "{} {line}", clock());
-        }
-    };
-    let ground = host::Ground {
-        port: stage.port,
-        claim: &stage.errand.claim,
-        span: stage.span,
-        bare: stage.errand.bare,
-        sources: &[],
-        transit: 0,
-    };
-    told(&format!(
-        "starting {} {}",
-        instance.get(),
-        dynet_api::VERSION
-    ));
-    if let Err(error) = host::establish(instance, &ground) {
-        told(&format!("refused to raise: {error}"));
-        return 1;
-    }
-    let carried = watch::carried(instance, stage, (dynet_windows::halted(), &told));
-    let code = match &carried {
-        Ok(_) => 0,
-        Err(error) => {
-            told(&format!(
-                "diverting failed, claimed destinations stay closed: {error}"
-            ));
-            1
-        }
-    };
-    if carried.is_ok() && !dynet_windows::closing() {
-        match host::reclaim(instance) {
-            Ok(cleared) => told(&format!("stopped and lowered: veil={}", cleared.veil)),
-            Err(error) => told(&format!("stopped but not lowered: {error}")),
-        }
-    }
-    code
 }
 
 fn plain(path: &Path) -> String {

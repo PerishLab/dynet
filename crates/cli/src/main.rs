@@ -36,7 +36,7 @@ use std::process::ExitCode;
     name = "dynet",
     version = plumb::version!("DYNET"),
     about = "Dynet command-line boundary",
-    after_help = "Short-command observation is disabled by default. Set [locus] enabled = true in config.toml under ~/.dynet. Buffers use state/locus there. endpoint overrides LOCUS_API, then http://127.0.0.1:43308. Observation failures preserve output and exit status. Continuous divert initializes no observation engine; divert --unit observes only unit generation."
+    after_help = "Short-command observation is disabled by default. Set [locus] enabled = true in config.toml under ~/.dynet on Unix or the LocalAppData known folder under dynet on Windows. Buffers use state/locus there. endpoint overrides LOCUS_API, then http://127.0.0.1:43308. Observation failures preserve output and exit status. Continuous divert initializes no observation engine; divert --unit observes only unit generation. Local state uses one --state or DYNET_STATE root, with runtime snapshots and flush communication in its run directory. Windows defaults to the ProgramData known folder under dynet; the service registration captures the resolved absolute root. Linux defaults remain /var/lib/dynet and /run/dynet."
 )]
 struct Cli {
     #[command(flatten)]
@@ -108,6 +108,8 @@ pub(crate) struct Config {
     port: u16,
     #[cascade(arg)]
     span: String,
+    #[cascade(arg)]
+    state: Option<PathBuf>,
     sources: String,
     transit: u16,
 }
@@ -118,6 +120,7 @@ impl Default for Config {
             instance: "dynet0".to_string(),
             port: PORT,
             span: host::PREFIX.to_string(),
+            state: None,
             sources: String::new(),
             transit: 0,
         }
@@ -160,16 +163,17 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     let config =
         Config::layered(None, cli.told.partial()).map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
+    let state = host::State::new(config.state.clone())?;
     match cli.command {
         Command::Doctor => Boundary(instance).doctor(&config),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
-        Command::Standing => Boundary(instance).reading(),
-        Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
+        Command::Standing => Boundary(instance).reading(&state),
+        Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand, &state)?),
         Command::Carry(errand) => carry::carry(&errand),
-        Command::Flush(errand) => flush::flush(&instance, &errand),
+        Command::Flush(errand) => flush::flush(&instance, &errand, &state),
         #[cfg(windows)]
-        Command::Service(service) => Boundary(instance).service(&config, &service),
+        Command::Service(service) => Boundary(instance).service(&config, &service, &state),
         Command::Resolve {
             manifest,
             cluster,
@@ -195,9 +199,14 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     }
 }
 
-fn staged<'a>(config: &Config, errand: &'a watch::Errand) -> Result<watch::Stage<'a>, Error> {
+fn staged<'a>(
+    config: &Config,
+    errand: &'a watch::Errand,
+    state: &'a host::State,
+) -> Result<watch::Stage<'a>, Error> {
     Ok(watch::Stage {
         errand,
+        state,
         port: config.port,
         span: Span::new(&config.span)?,
         transit: config.transit,

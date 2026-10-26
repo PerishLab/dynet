@@ -5,6 +5,7 @@ fn journal(seat: &tempfile::TempDir) -> Journal {
     let instance = Instance::new("dynet9").expect("instance");
     Journal::new(
         &instance,
+        &dynet_api::host::State::new(Some(seat.path().to_path_buf())).expect("state"),
         Some(seat.path().join("state").join("dynet9.ledger")),
     )
 }
@@ -59,4 +60,39 @@ fn stains() {
     journal.stain();
     assert!(journal.stained());
     assert!(!journal.stained(), "a stain is taken once");
+}
+
+#[test]
+fn isolated() {
+    let seat = tempfile::tempdir().expect("seat");
+    let root = seat.path().join("explicit root");
+    let state = dynet_api::host::State::new(Some(root.clone())).expect("state");
+    let instance = Instance::new("dynet9").expect("instance");
+    let journal = Journal::new(&instance, &state, None);
+    journal.save(&Ledger::new(60)).expect("save");
+    journal.ask("flush").expect("ask");
+    assert_eq!(journal.taken().as_deref(), Some("flush"));
+    assert!(!journal.order().exists());
+    journal.reply("done").expect("reply");
+    let standing = dynet_api::inbound::standing::path(&instance, &state);
+    dynet_api::host::Fragment::new(standing.clone(), "snapshot")
+        .write()
+        .expect("standing");
+    assert_eq!(journal.standing(), standing);
+    assert_eq!(
+        std::fs::read_to_string(journal.answer()).expect("answer"),
+        "done"
+    );
+    assert_eq!(journal.path(), root.join("dynet9.ledger"));
+    assert_eq!(standing, root.join("run/dynet9.standing"));
+    assert!(root.join("run/dynet9.flushed").is_file());
+}
+
+#[cfg(not(windows))]
+#[test]
+fn defaults() {
+    let state = dynet_api::host::State::new(None).expect("state");
+    assert_eq!(state.root(), std::path::Path::new("/var/lib/dynet"));
+    assert_eq!(state.runtime(), std::path::Path::new("/run/dynet"));
+    assert!(state.configured().is_none());
 }

@@ -480,7 +480,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -757,9 +757,9 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.107.0"
+version = "0.108.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "5533f9f0a40a71b2b8d0fc2381f8a97dafa7a79031b5249ef574b4f9907dc9cd"
+checksum = "797b109644f8bf43b001b772c69f858b61978b8298b828d923f986c444474043"
 dependencies = [
  "base64",
  "clap",
@@ -782,9 +782,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.107.0"
+version = "0.108.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "291c5ca193d7456b3fffb70b0d790b57a8775865fd7fff5f5c6a86e297718fba"
+checksum = "36b56e182dcf1cc462b4d9609e91f3f5e00373e987d94f1a0e75f3adbb7791ff"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -867,7 +867,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1096,7 +1096,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1275,7 +1275,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

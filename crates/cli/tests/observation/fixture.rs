@@ -19,7 +19,9 @@ impl Fixture {
     }
 
     pub(super) fn seat(&self) -> PathBuf {
-        self.root.path().join(".dynet")
+        self.root
+            .path()
+            .join(if cfg!(windows) { "dynet" } else { ".dynet" })
     }
 
     pub(super) fn configure(&self, text: &str) {
@@ -33,6 +35,7 @@ impl Fixture {
             .env("HOME", self.root.path())
             .env("USERPROFILE", self.root.path())
             .env("LOCALAPPDATA", self.root.path())
+            .env("DYNET_STATE", self.root.path().join("state"))
             .current_dir(self.root.path());
         match name {
             "doctor" | "up" | "down" | "standing" => {

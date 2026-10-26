@@ -11,13 +11,13 @@ struct Reading {
     standing: Standing,
 }
 
-pub fn path(instance: &Instance) -> PathBuf {
-    crate::host::passing().join(format!("{}.standing", instance.get()))
+pub fn path(instance: &Instance, state: &crate::host::State) -> PathBuf {
+    state.runtime().join(format!("{}.standing", instance.get()))
 }
 
 pub fn record(warren: &Warren, pools: &Pools, started: Instant) {
     let body = render(pools, started);
-    if let Err(error) = Fragment::new(path(warren.instance), body).write() {
+    if let Err(error) = Fragment::new(warren.journal.standing(), body).write() {
         (warren.told)(&format!("cannot record the standing: {error}"));
     }
 }

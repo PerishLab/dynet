@@ -11,11 +11,11 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub fn new(instance: &Instance, path: Option<PathBuf>) -> Self {
+    pub fn new(instance: &Instance, state: &super::State, path: Option<PathBuf>) -> Self {
         let name = instance.get();
         Self {
-            path: path.unwrap_or_else(|| super::kept().join(format!("{name}.ledger"))),
-            order: super::passing().join(format!("{name}.flush")),
+            path: path.unwrap_or_else(|| state.root().join(format!("{name}.ledger"))),
+            order: state.runtime().join(format!("{name}.flush")),
             stained: AtomicBool::new(false),
         }
     }
@@ -26,6 +26,10 @@ impl Journal {
 
     pub fn order(&self) -> &Path {
         &self.order
+    }
+
+    pub fn standing(&self) -> PathBuf {
+        self.order.with_extension("standing")
     }
 
     pub fn answer(&self) -> PathBuf {

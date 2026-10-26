@@ -358,9 +358,19 @@ and explicitly removes protection. Forwarded capture, transparent seats and
 SCM starts the service, restarts failures after five seconds and receives
 readiness only after the packet device, projection and resolver socket are
 ready. A stop ends the workers and lowers protection; shutdown keeps the
-persistent protection for next boot. State lives in `%ProgramData%/dynet`,
-runtime snapshots and flush orders in its `run` directory. The instance's
-`.log` file records service events without protocol material.
+persistent protection for next boot. The machine manager installs executable
+entrypoints in the Windows Program Files known folder under `Dynet/bin` and
+version seats under `Dynet/versions`. State defaults to the ProgramData known
+folder under `dynet`; lookup failure refuses rather than guessing a drive or
+probing historical directories. `--state` or the ordinary `DYNET_STATE` cascade
+layer selects one absolute root for the ledger, service log, runtime snapshots
+and flush communication, with runtime files in `run`. SCM captures the actual
+executable and resolved absolute state root at registration. The instance's
+`.log` file records service events without protocol material. Installation
+changes do not discover or migrate an old user seat; an approved local migration
+preserves the manifest ACL and issued ledger, replaces the service registration
+and removes the old seat after validation. Linux defaults stay `/var/lib/dynet`
+and `/run/dynet`; an explicit root uses its own `run` directory.
 
 The name-based boundary depends on callers using the resolver seat. Arbitrary
 application DoH or an IPv6 address acquired elsewhere is not made visible by
