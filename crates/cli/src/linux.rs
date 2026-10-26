@@ -71,8 +71,8 @@ impl Boundary {
     }
 
     #[locus::trace(with = plumb::observation::view())]
-    pub(crate) fn reading(&self) -> Result<ExitCode, Error> {
-        let path = dynet_api::inbound::standing::path(&self.0);
+    pub(crate) fn reading(&self, state: &host::State) -> Result<ExitCode, Error> {
+        let path = dynet_api::inbound::standing::path(&self.0, state);
         let text = std::fs::read_to_string(&path).map_err(|error| {
             Error::new(format!(
                 "cannot read {}: {error}; the service writes it every sweep while it is diverting",

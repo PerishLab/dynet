@@ -42,7 +42,11 @@ fn renews() {
     );
     let ledger = Mutex::new(issued);
     let instance = Instance::new("dynet9").expect("instance");
-    let journal = Journal::new(&instance, Some(seat.path().join("ledger")));
+    let journal = Journal::new(
+        &instance,
+        &dynet_api::host::State::new(Some(seat.path().to_path_buf())).expect("state"),
+        Some(seat.path().join("ledger")),
+    );
     let spoken = Mutex::new(Vec::new());
     let told = |line: &str| spoken.lock().expect("lines").push(line.to_string());
     let warren = Warren {

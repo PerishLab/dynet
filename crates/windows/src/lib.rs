@@ -3,6 +3,8 @@
 #[cfg(windows)]
 mod filter;
 #[cfg(windows)]
+mod folder;
+#[cfg(windows)]
 mod route;
 #[cfg(windows)]
 mod service;
@@ -13,6 +15,8 @@ mod uplink;
 
 #[cfg(windows)]
 pub use filter::{Settled, Wall};
+#[cfg(windows)]
+pub use folder::data;
 #[cfg(windows)]
 pub use route::{Interface, Prefix};
 #[cfg(windows)]

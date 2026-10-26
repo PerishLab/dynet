@@ -30,6 +30,7 @@ pub struct Errand {
 
 pub struct Stage<'a> {
     pub errand: &'a Errand,
+    pub state: &'a dynet_api::host::State,
     pub port: u16,
     pub span: Span,
     pub transit: u16,
@@ -37,7 +38,7 @@ pub struct Stage<'a> {
 
 pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     if stage.errand.unit {
-        print!("{}", unit(instance.get(), stage.errand));
+        print!("{}", unit(instance.get(), stage.errand, stage.state));
         return Ok(ExitCode::SUCCESS);
     }
     if stage.errand.service {
@@ -77,7 +78,7 @@ pub fn carried(
     let ground = (stage.span, patience, stage.transit);
     let loaded = manifest::read(&errand.manifest)?;
     let held = std::sync::RwLock::new(Arc::new(inbound::Held::new(loaded, None)?));
-    let journal = Journal::new(instance, errand.ledger.clone());
+    let journal = Journal::new(instance, stage.state, errand.ledger.clone());
     let ledger = std::sync::Mutex::new(journal.load(errand.retain)?);
     let reload = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
@@ -117,9 +118,12 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
     }
 }
 
-fn told(name: &str, errand: &Errand) -> String {
+fn told(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
     let mut parts = vec![
-        format!("/usr/local/bin/dynet --instance {name} divert"),
+        format!(
+            "/usr/local/bin/dynet --instance {name}{} divert",
+            located(state)
+        ),
         format!("--manifest {}", errand.manifest.display()),
         format!("--claim {}", errand.claim),
         format!("--upstream {}", errand.upstream),
@@ -132,12 +136,12 @@ fn told(name: &str, errand: &Errand) -> String {
     parts.join(" ")
 }
 
-pub fn unit(name: &str, errand: &Errand) -> String {
+pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
     let bare = match errand.bare {
         true => " --bare",
         false => "",
     };
-    let run = told(name, errand);
+    let run = told(name, errand, state);
     [
         "[Unit]".to_string(),
         format!("Description=Dynet on {name}"),
@@ -166,4 +170,20 @@ pub fn unit(name: &str, errand: &Errand) -> String {
         String::new(),
     ]
     .join("\n")
+}
+
+fn located(state: &dynet_api::host::State) -> String {
+    let Some(path) = state.configured() else {
+        return String::new();
+    };
+    let path = path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('%', "%%")
+        .replace('$', "$$")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!(" --state \"{path}\"")
 }

@@ -13,8 +13,12 @@ pub struct Errand {
     pub dry: bool,
 }
 
-pub fn flush(instance: &Instance, errand: &Errand) -> Result<ExitCode, Error> {
-    let journal = Journal::new(instance, None);
+pub fn flush(
+    instance: &Instance,
+    errand: &Errand,
+    state: &dynet_api::host::State,
+) -> Result<ExitCode, Error> {
+    let journal = Journal::new(instance, state, None);
     let order = match errand.dry {
         true => format!("{} dry", errand.told),
         false => errand.told.clone(),

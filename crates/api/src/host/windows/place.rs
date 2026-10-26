@@ -1,9 +1,10 @@
 use dynet_core::Error;
 use std::path::PathBuf;
 
-pub fn kept() -> PathBuf {
-    let data = std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into());
-    PathBuf::from(data).join("dynet")
+pub fn kept() -> Result<PathBuf, Error> {
+    dynet_windows::data()
+        .map(|root| root.join("dynet"))
+        .map_err(|error| Error::new(format!("cannot place local state: {error}")))
 }
 
 pub fn program() -> Result<PathBuf, Error> {

@@ -2,6 +2,7 @@ mod fragment;
 mod journal;
 #[cfg(not(windows))]
 mod linux;
+mod state;
 #[cfg(windows)]
 mod windows;
 
@@ -9,13 +10,13 @@ pub use fragment::{Fragment, Held, MARKER, held};
 pub use journal::{Journal, clock};
 #[cfg(not(windows))]
 pub use linux::{
-    Cleared, Ground, Link, Route, Settled, Shape, Standing, Veil, establish, kept, passing, read,
-    reclaim, survey, sweep,
+    Cleared, Ground, Link, Route, Settled, Shape, Standing, Veil, establish, read, reclaim, survey,
+    sweep,
 };
+pub use state::State;
 #[cfg(windows)]
 pub use windows::{
-    Cleared, Ground, Link, Route, Settled, Standing, Veil, establish, kept, passing, program,
-    reclaim,
+    Cleared, Ground, Link, Route, Settled, Standing, Veil, establish, program, reclaim,
 };
 
 use dynet_core::Error;
