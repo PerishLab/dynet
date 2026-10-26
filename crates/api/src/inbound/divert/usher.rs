@@ -1,8 +1,7 @@
 use super::{Divert, Held};
 use dynet_core::Error;
-use socket2::{Domain, Socket, Type};
+use socket2::{Domain, SockRef, Socket, Type};
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
-use std::os::fd::IntoRawFd;
 use std::time::Duration;
 
 const REST: Duration = Duration::from_millis(5);
@@ -11,9 +10,11 @@ const WAITING: i32 = 128;
 pub(super) fn seat(port: u16) -> Result<TcpListener, Error> {
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
         .map_err(|error| Error::new(format!("cannot open a transparent seat: {error}")))?;
-    socket
-        .set_ip_transparent(true)
-        .map_err(|error| Error::new(format!("cannot make the seat transparent: {error}")))?;
+    #[cfg(target_os = "linux")]
+    let made = socket.set_ip_transparent(true);
+    #[cfg(not(target_os = "linux"))]
+    let made = Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+    made.map_err(|error| Error::new(format!("cannot make the seat transparent: {error}")))?;
     socket
         .set_reuse_address(true)
         .map_err(|error| Error::new(format!("cannot hold the transparent seat: {error}")))?;
@@ -66,10 +67,7 @@ fn borne(stream: &TcpStream, transit: u16) -> Option<SocketAddr> {
     if seated.port() != transit {
         return Some(seated);
     }
-    let held = Socket::from(stream.try_clone().ok()?);
-    let told = held.original_dst().ok();
-    let _ = held.into_raw_fd();
-    told?.as_socket()
+    SockRef::from(stream).original_dst().ok()?.as_socket()
 }
 
 fn shaped(caller: SocketAddrV4, target: SocketAddrV4) -> Held {

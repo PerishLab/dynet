@@ -20,7 +20,12 @@ are.
 - `crates/lib` owns the shared semantic kernel and contracts as `dynet-core`.
 - `crates/api` owns the reusable API surface.
 - `crates/cli` owns command grammar and user-facing output.
-- Dependency direction is `cli -> api -> lib`.
+- `crates/tun` owns the packet device on each platform as `dynet-tun`: open
+  a device by name, read its identity and MTU, read and write one IP packet,
+  wait. Linux opens `/dev/net/tun`; Windows binds Wintun by hand. It is the
+  only crate that holds unsafe code; routes, DNS, exemption, firewall and
+  service stay in `api`'s host layer.
+- Dependency direction is `cli -> api -> lib`, and `api -> tun`.
 - Keep the API independent of CLI presentation concerns.
 - Add product vocabulary only when its behavior and ownership have been
   explicitly settled.
@@ -230,6 +235,30 @@ are.
 - There is no fake address space. DNS answers are real, so the rule matches and
   the cluster is chosen when the name is asked for, and the name is resolved
   through that cluster.
+
+## Wintun
+
+`crates/tun/resources/wintun.dll` is the amd64 binary from the official
+Wintun 0.14.1 release at `https://www.wintun.net/builds/wintun-0.14.1.zip`
+(archive SHA256
+`07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51`, the DLL
+signed by WireGuard LLC), DLL SHA256 `e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce`,
+carried beside its `LICENSE.txt`. The license allows redistribution alongside
+software that uses it only through `wintun.h`, which is all `crates/tun` does.
+The digest is pinned in `crates/tun/src/windows/resource.rs`; the binary is
+embedded at compile time and written beside `dynet.exe` only after it matches,
+then loaded from there. Nothing is fetched at build or run time. Replacing it
+means replacing both files and the pin together.
+
+The adapter is created under the instance's name with tunnel type `Dynet` and
+a GUID derived from that name, so it keeps one identity across restarts and
+never collides with another product's adapter; dropping the device removes
+it.
+
+Where a platform lacks a mechanism the Linux path uses, the call is compiled
+for Linux alone and refuses elsewhere rather than pretending: socket marks and
+transparent seats are Linux's; the keepalive retry count is set where the
+platform exposes it.
 
 ## Release
 
