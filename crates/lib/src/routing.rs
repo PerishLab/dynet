@@ -1,15 +1,17 @@
+mod decide;
 mod domain;
 mod ledger;
 mod range;
-mod router;
+mod reserved;
 mod rule;
 mod span;
 mod table;
 
+pub use decide::{Course, Decision, Ground, Refusal, Sight, Told, decide, usable};
 pub use domain::Domain;
 pub use ledger::{Issue, Ledger};
 pub use range::Range;
-pub use router::Router;
+pub use reserved::{reserved, spared};
 pub use rule::{Rule, Subject};
 pub use span::Span;
-pub use table::{Decision, Ground, Table};
+pub use table::Table;

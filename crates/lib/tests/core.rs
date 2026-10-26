@@ -1,6 +1,4 @@
-use dynet_core::{
-    Affinity, Bearing, Capability, Carriage, Cluster, Label, Name, Node, Pool, Spread,
-};
+use dynet_core::{Affinity, Bearing, Capability, Carriage, Cluster, Form, Label, Name, Node};
 use std::time::Duration;
 
 fn node(label: &str, carriage: Carriage) -> Node {
@@ -16,7 +14,7 @@ fn cluster(carriages: &[Carriage]) -> Cluster {
         .enumerate()
         .map(|(index, carriage)| node(&format!("node-{index}"), *carriage))
         .collect();
-    Cluster::new(Name::new("provider").expect("cluster name"), nodes).expect("cluster")
+    Cluster::pool(Name::new("provider").expect("cluster name"), nodes).expect("cluster")
 }
 
 #[test]
@@ -28,10 +26,18 @@ fn names() {
 }
 
 #[test]
-fn empty() {
-    let error = Cluster::new(Name::new("provider").expect("name"), Vec::new())
-        .expect_err("an empty cluster must refuse");
-    assert!(error.to_string().contains("no node"), "{error}");
+fn reserved() {
+    let error = Cluster::pool(Name::new("direct").expect("name"), Vec::new())
+        .expect_err("direct is not a cluster");
+    assert!(
+        error.to_string().contains("leaving from the host"),
+        "{error}"
+    );
+    let looped = Cluster::new(
+        Name::new("alias").expect("name"),
+        Form::Alias(Name::new("alias").expect("name")),
+    );
+    assert!(looped.is_err(), "a cluster cannot lead to itself");
 }
 
 #[test]
@@ -65,15 +71,23 @@ fn bearers() {
 }
 
 #[test]
-fn spreading() {
-    let wide = Pool::wide(cluster(&[Carriage::Native]));
-    assert_eq!(wide.spread(), Spread::Wide);
-    assert!(wide.affinity().is_none());
-
-    let window = Affinity::new(Duration::from_secs(300)).expect("affinity");
-    let bound = Pool::bound(cluster(&[Carriage::Native]), window);
-    assert_eq!(bound.spread(), Spread::Bound);
-    assert_eq!(bound.affinity().expect("window").window().as_secs(), 300);
-
+fn windows() {
+    assert_eq!(
+        Affinity::read("30s").expect("seconds").window().as_secs(),
+        30
+    );
+    assert_eq!(
+        Affinity::read("10m").expect("minutes").window().as_secs(),
+        600
+    );
+    assert_eq!(
+        Affinity::read("1h").expect("hours").window().as_secs(),
+        3600
+    );
+    for refused in ["", "0s", "10", "m", "5d"] {
+        assert!(Affinity::read(refused).is_err(), "{refused} must refuse");
+    }
+    let bound = cluster(&[Carriage::Native]).bounded(Affinity::read("10m").expect("window"));
+    assert_eq!(bound.bound().expect("bound").window().as_secs(), 600);
     assert!(Affinity::new(Duration::ZERO).is_err());
 }

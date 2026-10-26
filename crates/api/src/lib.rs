@@ -1,14 +1,11 @@
 #![forbid(unsafe_code)]
 
-pub mod catalog;
 pub mod host;
 pub mod inbound;
+pub mod manifest;
 pub mod outbound;
 pub mod resolver;
 
-pub mod subscription;
-
-pub use catalog::{Catalog, Declined, Reason};
-pub use subscription::Entry;
+pub use manifest::{Entry, Loaded};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

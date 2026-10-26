@@ -29,6 +29,26 @@ impl Range {
         self.prefix
     }
 
+    pub fn read(told: &str) -> Result<Self, Error> {
+        let (base, prefix) = told
+            .split_once('/')
+            .ok_or_else(|| Error::new(format!("{told} carries no prefix length")))?;
+        let base = base
+            .parse()
+            .map_err(|_| Error::new(format!("{base} is not an address")))?;
+        let prefix = prefix
+            .parse()
+            .map_err(|_| Error::new(format!("{prefix} is not a prefix length")))?;
+        Self::new(base, prefix)
+    }
+
+    pub fn overlaps(self, other: Self) -> bool {
+        match self.prefix <= other.prefix {
+            true => self.holds(other.base),
+            false => other.holds(self.base),
+        }
+    }
+
     pub fn holds(self, address: IpAddr) -> bool {
         match (self.base, address) {
             (IpAddr::V4(base), IpAddr::V4(address)) => {

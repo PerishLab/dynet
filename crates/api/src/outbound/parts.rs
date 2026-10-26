@@ -1,18 +1,25 @@
 use super::shadow::{Cloak, Shroud, veil};
 use super::vless::{self, Reality};
 use super::vmess::{self, Endpoint, Tunnel};
-use crate::subscription::Entry;
+use crate::manifest::Entry;
 use dynet_core::{Error, Fault};
 use std::io::{Read, Write};
+use std::net::{Shutdown, TcpStream};
+use std::time::Duration;
+
+const PATIENCE: Duration = Duration::from_secs(5);
+const ROOM: usize = 16384;
 
 pub enum Egress {
     Vmess(Box<vmess::Egress>),
     Vless(vless::Egress),
+    Raw(TcpStream),
 }
 
 pub enum Ingress {
     Vmess(Box<vmess::Ingress>),
     Vless(vless::Ingress),
+    Raw(TcpStream),
 }
 
 impl Egress {
@@ -20,6 +27,9 @@ impl Egress {
         match self {
             Self::Vmess(egress) => egress.send(body),
             Self::Vless(egress) => egress.send(body),
+            Self::Raw(stream) => stream
+                .write_all(body)
+                .map_err(|error| Error::new(format!("cannot send directly: {error}"))),
         }
     }
 
@@ -27,6 +37,9 @@ impl Egress {
         match self {
             Self::Vmess(egress) => egress.done(),
             Self::Vless(egress) => egress.done(),
+            Self::Raw(stream) => stream
+                .shutdown(Shutdown::Write)
+                .map_err(|error| Error::new(format!("cannot close directly: {error}"))),
         }
     }
 }
@@ -36,6 +49,14 @@ impl Ingress {
         match self {
             Self::Vmess(ingress) => ingress.receive(),
             Self::Vless(ingress) => ingress.receive(),
+            Self::Raw(stream) => {
+                let mut room = vec![0; ROOM];
+                let size = stream
+                    .read(&mut room)
+                    .map_err(|error| Error::new(format!("cannot receive directly: {error}")))?;
+                room.truncate(size);
+                Ok((size > 0).then_some(room))
+            }
         }
     }
 
@@ -43,6 +64,7 @@ impl Ingress {
         match self {
             Self::Vmess(ingress) => ingress.fault(),
             Self::Vless(ingress) => ingress.fault(),
+            Self::Raw(_) => None,
         }
     }
 }
@@ -52,6 +74,7 @@ impl Write for Egress {
         match self {
             Self::Vmess(egress) => egress.write(body),
             Self::Vless(egress) => egress.write(body),
+            Self::Raw(stream) => stream.write(body),
         }
     }
 
@@ -65,6 +88,7 @@ impl Read for Ingress {
         match self {
             Self::Vmess(ingress) => ingress.read(room),
             Self::Vless(ingress) => ingress.read(room),
+            Self::Raw(stream) => stream.read(room),
         }
     }
 }
@@ -184,6 +208,7 @@ impl Front {
 pub enum Passage {
     Plain(Front),
     Veiled(Front, Exit),
+    Direct(u32),
 }
 
 impl Passage {
@@ -194,6 +219,7 @@ impl Passage {
                 Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
             }
             Self::Veiled(front, exit) => veiled(front, exit, (host, port)),
+            Self::Direct(mark) => direct(host, port, *mark),
         }
     }
 
@@ -215,6 +241,16 @@ impl Passage {
             Listener::Plain(Ingress::Vmess(Box::new(ingress))),
         ))
     }
+}
+
+fn direct(host: &str, port: u16, mark: u32) -> Result<(Speaker, Listener), Fault> {
+    let seat = super::bond::place(host, port).map_err(|_| Fault::Reach)?;
+    let stream = super::bond::reach(seat, mark, PATIENCE).map_err(|_| Fault::Reach)?;
+    let again = stream.try_clone().map_err(|_| Fault::Reach)?;
+    Ok((
+        Speaker::Plain(Egress::Raw(stream)),
+        Listener::Plain(Ingress::Raw(again)),
+    ))
 }
 
 fn veiled(front: &Front, exit: &Exit, seat: (&str, u16)) -> Result<(Speaker, Listener), Fault> {

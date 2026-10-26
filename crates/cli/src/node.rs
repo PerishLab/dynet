@@ -1,24 +1,18 @@
 use dynet_api::outbound::veil;
 use dynet_api::outbound::{Endpoint, PROBE, Roster, Run, Tunnel};
-use dynet_api::{catalog, resolver, subscription};
-use dynet_core::{Domain, Error, Name, Router, Rule, Subject, Table};
-use std::path::PathBuf;
+use dynet_api::{Entry, Loaded, manifest, resolver};
+use dynet_core::{Cluster, Error, Form};
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 const LOOSE: u32 = 0;
 
 #[locus::trace(with = plumb::observation::view())]
-pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Error> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
-    let entries = subscription::read(&text)?;
-    let held = catalog::build(&entries)?;
-    let wanted = held
-        .clusters()
-        .iter()
-        .find(|item| item.name().get() == cluster)
-        .ok_or_else(|| Error::new(format!("no cluster named {cluster}")))?;
+pub fn reach(path: &Path, cluster: &str, count: usize) -> Result<ExitCode, Error> {
+    let loaded = manifest::read(path)?;
+    let entries = loaded.entries();
+    let wanted = pooled(&loaded, cluster)?;
     let labels: Vec<&str> = wanted
         .nodes()
         .iter()
@@ -28,7 +22,7 @@ pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Er
     let mut failures = 0;
     for (index, label) in labels.iter().enumerate() {
         let began = Instant::now();
-        match visit(&entries, label) {
+        match visit(entries, label) {
             Ok(seen) => println!(
                 "{cluster}[{index}]: {} opened {}ms whole {}ms",
                 seen.egress,
@@ -50,18 +44,12 @@ pub fn reach(path: &PathBuf, cluster: &str, count: usize) -> Result<ExitCode, Er
     })
 }
 
-pub fn probe(path: &PathBuf, cluster: &str, name: &str, count: usize) -> Result<ExitCode, Error> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
-    let entries = subscription::read(&text)?;
-    let held = catalog::build(&entries)?;
-    let wanted = held
-        .clusters()
-        .iter()
-        .find(|item| item.name().get() == cluster)
-        .ok_or_else(|| Error::new(format!("no cluster named {cluster}")))?;
+pub fn probe(path: &Path, cluster: &str, name: &str, count: usize) -> Result<ExitCode, Error> {
+    let loaded = manifest::read(path)?;
+    let entries = loaded.entries();
+    let wanted = pooled(&loaded, cluster)?;
     for (index, node) in wanted.nodes().iter().take(count).enumerate() {
-        match lookup(&entries, node.label().get(), name) {
+        match lookup(entries, node.label().get(), name) {
             Ok(found) => println!("{cluster}[{index}]: {found:?}"),
             Err(error) => println!("{cluster}[{index}]: refused: {error}"),
         }
@@ -69,11 +57,7 @@ pub fn probe(path: &PathBuf, cluster: &str, name: &str, count: usize) -> Result<
     Ok(ExitCode::SUCCESS)
 }
 
-pub fn lookup(
-    entries: &[subscription::Entry],
-    label: &str,
-    name: &str,
-) -> Result<Vec<resolver::Answer>, Error> {
+pub fn lookup(entries: &[Entry], label: &str, name: &str) -> Result<Vec<resolver::Answer>, Error> {
     let mut tunnel = board(entries, label, "1.1.1.1", 53)?;
     tunnel.send(&resolver::ask(name, 0x2b2b)?)?;
     let mut answer = Vec::new();
@@ -89,12 +73,7 @@ pub fn lookup(
     resolver::read(answer.get(2..).unwrap_or_default())
 }
 
-pub fn board(
-    entries: &[subscription::Entry],
-    label: &str,
-    host: &str,
-    port: u16,
-) -> Result<Tunnel, Error> {
+pub fn board(entries: &[Entry], label: &str, host: &str, port: u16) -> Result<Tunnel, Error> {
     let entry = entries
         .iter()
         .find(|item| item.field("name") == Some(label))
@@ -121,7 +100,7 @@ pub struct Visit {
     pub whole: Duration,
 }
 
-pub fn visit(entries: &[subscription::Entry], label: &str) -> Result<Visit, Error> {
+pub fn visit(entries: &[Entry], label: &str) -> Result<Visit, Error> {
     let began = Instant::now();
     let entry = entries
         .iter()
@@ -170,36 +149,31 @@ pub struct Aim {
     pub target: String,
 }
 
-pub fn spread(path: &PathBuf, cluster: &str, aim: &Aim) -> Result<ExitCode, Error> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
-    let entries = subscription::read(&text)?;
-    let held = catalog::build(&entries)?;
-    let wanted = held
-        .clusters()
-        .iter()
-        .find(|item| item.name().get() == cluster)
-        .ok_or_else(|| Error::new(format!("no cluster named {cluster}")))?;
-    let name = Domain::new(PROBE)?;
-    let router = Router::new(table(&name, wanted.name())?);
-    let roster = Roster::aimed(&entries, &aim.target, LOOSE);
-    let run = roster.drive(wanted, &router.asked(&name), aim.count)?;
+pub fn spread(path: &Path, cluster: &str, aim: &Aim) -> Result<ExitCode, Error> {
+    let loaded = manifest::read(path)?;
+    let wanted = pooled(&loaded, cluster)?;
+    let roster = Roster::aimed(loaded.entries(), &aim.target, LOOSE);
+    let run = roster.drive(wanted, aim.count)?;
     Ok(report(&run, aim.count))
 }
 
-pub fn table(name: &Domain, cluster: &Name) -> Result<Table, Error> {
-    let rule = Rule::new(Subject::Exact(name.clone()), cluster.clone());
-    Ok(Table::new(vec![rule], Name::new("direct")?))
+fn pooled<'a>(loaded: &'a Loaded, cluster: &str) -> Result<&'a Cluster, Error> {
+    let found = loaded
+        .manifest()
+        .clusters()
+        .iter()
+        .find(|item| item.name().get() == cluster)
+        .ok_or_else(|| Error::new(format!("the manifest declares no cluster {cluster}")))?;
+    match found.form() {
+        Form::Pool(_) => Ok(found),
+        Form::Alias(_) | Form::Via(..) => Err(Error::new(format!(
+            "cluster {cluster} is not a pool; name the pool it leads to"
+        ))),
+    }
 }
 
 pub fn report(run: &Run, count: usize) -> ExitCode {
-    let decision = run.decision();
-    println!(
-        "rule {} -> cluster {} on ground {:?}",
-        PROBE,
-        decision.cluster().get(),
-        decision.ground()
-    );
+    println!("{} through cluster {}", PROBE, run.cluster().get());
     for trial in run.trials() {
         println!(
             "  {:<28} {:<24} {:?} {}",

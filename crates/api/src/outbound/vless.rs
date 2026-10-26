@@ -11,7 +11,7 @@ pub mod vision;
 
 use super::bond::{place, reach};
 use super::raw::{addressed, parse, unbase};
-use crate::subscription::Entry;
+use crate::manifest::Entry;
 use dynet_core::Error;
 pub use half::{Egress, Ingress};
 use std::net::TcpStream;

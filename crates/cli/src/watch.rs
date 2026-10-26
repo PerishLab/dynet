@@ -1,6 +1,5 @@
-use dynet_api::inbound::table;
-use dynet_api::{catalog, inbound, subscription};
-use dynet_core::{Error, Instance, Router, Span};
+use dynet_api::{inbound, manifest};
+use dynet_core::{Error, Instance, Ledger, Span};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -9,9 +8,7 @@ use std::sync::atomic::AtomicBool;
 #[derive(clap::Args)]
 pub struct Errand {
     #[arg(long)]
-    pub subscription: PathBuf,
-    #[arg(long)]
-    pub clusters: PathBuf,
+    pub manifest: PathBuf,
     #[arg(long, default_value = "1.1.1.1")]
     pub upstream: String,
     #[arg(long, default_value = "0.0.0.0/0")]
@@ -20,8 +17,6 @@ pub struct Errand {
     pub bare: bool,
     #[arg(long)]
     pub unit: bool,
-    #[arg(long)]
-    pub table: PathBuf,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
 }
@@ -50,22 +45,9 @@ fn staged<T>(
     act: impl FnOnce(&inbound::Warren) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let errand = stage.errand;
-    let text = std::fs::read_to_string(&errand.subscription).map_err(|error| {
-        Error::new(format!(
-            "cannot read {}: {error}",
-            errand.subscription.display()
-        ))
-    })?;
-    let mut entries = subscription::read(&text)?;
-    let spoken = std::fs::read_to_string(&errand.clusters).map_err(|error| {
-        Error::new(format!(
-            "cannot read {}: {error}",
-            errand.clusters.display()
-        ))
-    })?;
-    let held = catalog::declare(&spoken, &entries)?;
-    entries.extend(held.spoken().iter().cloned());
-    let router = std::sync::Mutex::new(Router::new(table::read(&errand.table, held.clusters())?));
+    let loaded = manifest::read(&errand.manifest)?;
+    let held = std::sync::RwLock::new(Arc::new(inbound::Held::new(loaded, None)?));
+    let ledger = std::sync::Mutex::new(Ledger::new());
     let reload = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
@@ -73,10 +55,9 @@ fn staged<T>(
     let told = |line: &str| println!("  {line}");
     let warren = inbound::Warren {
         instance,
-        entries: &entries,
-        clusters: held.clusters(),
-        router: &router,
-        table: &errand.table,
+        held: &held,
+        ledger: &ledger,
+        source: &errand.manifest,
         reload: &reload,
         port: stage.port,
         upstream: &errand.upstream,
@@ -106,12 +87,10 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
 fn told(name: &str, errand: &Errand) -> String {
     let mut parts = vec![
         format!("/usr/local/bin/dynet --instance {name} divert"),
-        format!("--subscription {}", errand.subscription.display()),
-        format!("--clusters {}", errand.clusters.display()),
+        format!("--manifest {}", errand.manifest.display()),
         format!("--claim {}", errand.claim),
         format!("--upstream {}", errand.upstream),
     ];
-    parts.push(format!("--table {}", errand.table.display()));
     parts.push("--seconds 0".to_string());
     parts.join(" ")
 }

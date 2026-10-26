@@ -68,8 +68,25 @@ are.
   probe a front is checked with on a host, because the workstation's own
   tunnel client rewrites destinations by name and a check made through it
   reaches the handshake target instead of the node.
-- A subscription entry may nest one mapping, such as `reality-opts`, and its
-  keys are read as dotted names (`reality-opts.public-key`).
+- The `Manifest` is the one input that says what Dynet routes and through
+  what: `nodes` with their protocol material, `clusters`, ordered `rules`, a
+  `fallback` and a `drain`, as one JSON document (`version` 1) read by
+  `dynet-core` and refused whole when any part of it is wrong. A node's nested
+  material is read as dotted names (`tls.reality.public_key`), and `dynet-api`
+  checks at load that every pool node can front a stream and every exit speaks
+  Shadowsocks 2022, so a manifest that names an unusable node never stands.
+  Machine facts (instance, seats, sources) stay in configuration, not here.
+- A cluster takes exactly one of three forms: a pool that lists `nodes` or takes
+  every node of a provider through `members`; an alias whose `pool` names a
+  pool and carries nothing else; or `via` a pool to one fixed `exit` node. An
+  alias cannot name an alias and a front cannot be reached through one, so
+  every path is one level. Only a pool may carry `bound` (an affinity window
+  such as `10m`) or `probe_exit`, which must be the exit of a cluster fronted by
+  that pool. `disabled` keeps a cluster declared while every decision for it is
+  refused. Clusters are declared, never derived from how a vendor labels nodes.
+- `drain` removes nodes, or every node of a provider, from the pools that list
+  them; a provider is a node's own `provider`, or the host part of its label
+  before `/`. It is the only operator intervention: there is no pin.
 
 - `Bearing` is what a piece of traffic needs, `Stream` or `Datagram`. A cluster
   carries datagrams when any of its nodes does, and datagram selection chooses
@@ -79,9 +96,8 @@ are.
   datagram weight and keeps its stream weight, because a vendor flag is a claim
   and the score is where that claim is checked. Nothing probes carriage ahead of
   time; the first real request through a node is the measurement.
-- A `Pool` is what a rule resolves to. Spreading is the default and `Pool::wide`
-  says so; affinity is the exception and `Pool::bound` requires naming the
-  window it holds for.
+- Spreading across a pool is the default; affinity is the exception and a pool
+  states it with `bound` and the window it holds for.
 - An instance derives everything it must not share from its own name: the rule
   priority it installs, the mark it stamps, and the numeric routing table it
   claims. A constant table number would make two instances two names for one
@@ -103,16 +119,41 @@ are.
   from a declared source, the same scope that decides what traffic is diverted
   at all. Without a declared source there is no prerouting chain, so nothing
   that is not this host's is answered by accident.
-- A `Table` is the routing policy, declared in its own file and named by
-  `--table`. It carries a rule per line of policy, each naming exactly one of
-  `exact`, `suffix` or `holds` and the cluster that carries what it matches, and
-  a `fallback` that is `direct` unless it names a declared cluster. It is a
-  separate file from the cluster declaration because the two change on different
-  clocks: topology changes when the subscription or an exit does, policy changes
-  whenever a destination is added. The running service re-reads it on SIGHUP and
-  keeps the standing table when the new one refuses, so a bad edit costs nothing;
-  the ledger of issued addresses survives a reload, so sessions already carried
-  are not disturbed.
+- Rules are matched in order and the first one that matches wins; each names
+  exactly one of `exact`, `suffix` or `holds` and the cluster that carries what
+  it matches. One name or prefix belongs to one rule only. The `fallback` is
+  `direct` or any declared cluster; that choice is the deployment's, not the
+  product's. The running service re-reads the whole manifest on SIGHUP and
+  keeps the standing one when the new one refuses, so a bad edit costs nothing;
+  the ledger of issued addresses and each unchanged pool's standing survive a
+  replacement.
+- A destination is decided by one pure function over the manifest, the ledger,
+  the name the caller gave if any, the address and the bearing, taking the
+  first of five rows that holds: a name that is the destination's own and is
+  claimed by a rule, or a provider's public name a rule claims explicitly, goes
+  through that rule's cluster; an address inside a `holds` goes through its
+  cluster; a destination's own name that no rule claims leaves directly; an
+  address the ledger issued goes through the cluster it was issued under;
+  anything else takes the fallback. Through a cluster that is disabled, holds
+  no usable node or cannot bear a datagram, the decision is a refusal and never
+  falls back. Tests drive every combination and pin that a held address is
+  never direct, a claimed own name is never direct, a provider's public name or
+  an address literal alone never yields direct, a claimed destination refuses
+  rather than falls back, and an unclaimed name on an address issued to another
+  name leaves directly.
+- A destination's own name that a rule claims, on an address the ledger never
+  issued, is dialled by name through the node and logged with `aim=`: the
+  caller's address came from some other resolver and may be poisoned, so the
+  node resolves the name where it stands. An issued address keeps its address,
+  whoever it was issued for.
+- `direct` means Dynet dials the destination itself under its own mark, which
+  is how a captured stream leaves from the host. Datagrams are never sent
+  directly from here, so a datagram decided `direct` is refused.
+- Reserved ranges (`0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`,
+  `172.16/12`, `192.168/16`, `198.18/15`, `224/4`, `240/4`) are never claimed,
+  issued or answered: a `holds` overlapping one refuses the manifest, the ledger
+  never records one, and an answer carrying one has it left out, failing the
+  name when nothing else remains.
 
 - What the running service thinks of each node is recorded to
   `/run/dynet/<instance>.standing` on every sweep and read back by
@@ -154,12 +195,12 @@ are.
   destination whose first bytes are repeatedly unreadable stops being peeked at
   all, because a bound paid on every connection to a protocol this cannot read
   is a bound paid forever.
-- A name read from the wire decides the cluster and nothing else. It asks the
-  table directly, where an unsniffed connection still falls back to what the
-  ledger issued the address under, and the target carried through the node is
-  unchanged either way. When the two names disagree the disagreement is said
-  out loud, because a routing decision nobody can attribute is the shape this
-  repository has already paid to fix once.
+- A name read from the wire enters the decision as the destination's own name,
+  or as a provider's public name when it rode beside an encrypted client hello;
+  an address literal is no name at all. When it disagrees with the name the
+  ledger issued the address for, the disagreement is said out loud, because a
+  routing decision nobody can attribute is the shape this repository has
+  already paid to fix once.
 
 - What Dynet captures is scoped by where the traffic came from, and the scope is
   configuration rather than an argument because it is a fact about the machine.

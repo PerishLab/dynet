@@ -1,5 +1,6 @@
 use super::domain::Domain;
-use super::table::Decision;
+use super::reserved::spared;
+use crate::Name;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Instant;
@@ -7,7 +8,7 @@ use std::time::Instant;
 #[derive(Clone, Debug)]
 pub struct Issue {
     domain: Domain,
-    decision: Decision,
+    cluster: Name,
     expiry: Instant,
 }
 
@@ -18,12 +19,20 @@ pub struct Ledger {
 }
 
 impl Issue {
+    pub fn new(domain: Domain, cluster: Name, expiry: Instant) -> Self {
+        Self {
+            domain,
+            cluster,
+            expiry,
+        }
+    }
+
     pub fn domain(&self) -> &Domain {
         &self.domain
     }
 
-    pub fn decision(&self) -> &Decision {
-        &self.decision
+    pub fn cluster(&self) -> &Name {
+        &self.cluster
     }
 
     pub fn expiry(&self) -> Instant {
@@ -36,27 +45,23 @@ impl Ledger {
         Self::default()
     }
 
-    pub fn record(&mut self, address: IpAddr, issue: Issue) {
+    pub fn record(&mut self, address: IpAddr, issue: Issue) -> bool {
+        if spared(address) {
+            return false;
+        }
         let crossed = self
             .issued
             .get(&address)
-            .is_some_and(|held| held.decision().cluster() != issue.decision.cluster());
+            .is_some_and(|held| held.cluster() != issue.cluster());
         if crossed {
             self.contested += 1;
         }
         self.issued.insert(address, issue);
+        true
     }
 
     pub fn contested(&self) -> usize {
         self.contested
-    }
-
-    pub fn issue(domain: Domain, decision: Decision, expiry: Instant) -> Issue {
-        Issue {
-            domain,
-            decision,
-            expiry,
-        }
     }
 
     pub fn lookup(&self, address: IpAddr, now: Instant) -> Option<&Issue> {

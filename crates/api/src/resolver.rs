@@ -1,5 +1,9 @@
+mod prune;
+
 use dynet_core::Error;
 use std::net::Ipv4Addr;
+
+pub use prune::prune;
 
 const ADDRESS: u16 = 1;
 const MARK: u16 = 0x5151;
@@ -71,6 +75,14 @@ impl<'a> Packet<'a> {
         answer[6..12].fill(0);
         answer[4] = 0;
         answer[5] = 1;
+        answer
+    }
+
+    pub fn failed(&self, query: &Query) -> Vec<u8> {
+        let mut answer = self.barren(query);
+        if answer.len() >= 4 {
+            answer[3] = 0x82;
+        }
         answer
     }
 
@@ -217,7 +229,7 @@ pub fn read(body: &[u8]) -> Result<Vec<Answer>, Error> {
     Ok(found)
 }
 
-fn skip(body: &[u8], mut cursor: usize) -> Result<usize, Error> {
+pub(crate) fn skip(body: &[u8], mut cursor: usize) -> Result<usize, Error> {
     loop {
         let Some(size) = body.get(cursor) else {
             return Err(Error::new("a name ran past the answer"));

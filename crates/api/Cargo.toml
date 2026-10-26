@@ -31,3 +31,5 @@ toml.workspace = true
 
 [dev-dependencies]
 dynet-core.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

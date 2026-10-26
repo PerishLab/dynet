@@ -87,7 +87,7 @@ fn buffered() {
         "private-uuid",
         "private-secret",
         "private-target",
-        "private-subscription",
+        "private-manifest",
         "127.0.0.1",
     ] {
         assert!(!text.contains(private));
