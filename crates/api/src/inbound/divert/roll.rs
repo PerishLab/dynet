@@ -1,6 +1,6 @@
 use crate::inbound::IDLE;
-use std::collections::HashMap;
-use std::net::SocketAddrV4;
+use std::collections::{BTreeMap, HashMap};
+use std::net::{IpAddr, SocketAddrV4};
 use std::time::Instant;
 
 const FIRST: u16 = 20000;
@@ -73,6 +73,16 @@ impl Roll {
             self.free.push(*spare);
         }
         gone.len()
+    }
+
+    pub(super) fn engaged(&self) -> BTreeMap<IpAddr, u32> {
+        let mut engaged = BTreeMap::new();
+        for kept in self.kept.values().filter(|kept| kept.ended.is_none()) {
+            *engaged
+                .entry(IpAddr::V4(*kept.held.target.ip()))
+                .or_default() += 1;
+        }
+        engaged
     }
 
     pub(super) fn standing(&self) -> usize {

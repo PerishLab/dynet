@@ -1,7 +1,21 @@
 use crate::error::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Domain(String);
+
+impl<'de> Deserialize<'de> for Domain {
+    fn deserialize<D: Deserializer<'de>>(told: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(told)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for Domain {
+    fn serialize<S: Serializer>(&self, told: S) -> Result<S::Ok, S::Error> {
+        told.serialize_str(&self.0)
+    }
+}
 
 impl Domain {
     pub fn new(value: impl AsRef<str>) -> Result<Self, Error> {

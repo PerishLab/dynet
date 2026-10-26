@@ -133,8 +133,8 @@ are.
   claimed by a rule, or a provider's public name a rule claims explicitly, goes
   through that rule's cluster; an address inside a `holds` goes through its
   cluster; a destination's own name that no rule claims leaves directly; an
-  address the ledger issued goes through the cluster it was issued under;
-  anything else takes the fallback. Through a cluster that is disabled, holds
+  address the ledger issued goes through the cluster it was issued under, or
+  leaves directly once a flush released it; anything else takes the fallback. Through a cluster that is disabled, holds
   no usable node or cannot bear a datagram, the decision is a refusal and never
   falls back. Tests drive every combination and pin that a held address is
   never direct, a claimed own name is never direct, a provider's public name or
@@ -154,6 +154,37 @@ are.
   issued or answered: a `holds` overlapping one refuses the manifest, the ledger
   never records one, and an answer carrying one has it left out, failing the
   name when nothing else remains.
+
+- The ledger records, per address, every name it was issued for (at most 32;
+  a thirty-third makes the entry `crowded`), the cluster, and when it was
+  issued, expires and is retained until. An entry leaves only once
+  `max(TTL + 120 s, floor)` has passed and no session to the address is
+  standing; the floor is `--retain`, 24 h by default, because applications
+  that ignore TTL keep dialling an address long after it expired, and an
+  address that left the kernel table is reached around Dynet. A changed floor
+  binds only entries issued after it.
+- The ledger is written atomically to `/var/lib/dynet/<instance>.ledger` (or
+  `--ledger`) within a second of changing, and loaded, re-judged and projected
+  into the instance's route table before any seat opens. A ledger that exists
+  and cannot be read refuses the start: an empty one would release addresses
+  that callers still hold. Discarding it is a manual deletion with that cost
+  accepted. The file is a JSON array of entries that only ever gains fields,
+  pinned by a test, so an older build can read what a newer one wrote.
+- The kernel table is reconciled against the ledger, never trusted to it: a
+  settle adds what is missing and removes what is not issued in one `ip -batch`,
+  then reads the table back and reports a shortfall as an error. It runs at
+  start, after every sweep that released something, after a re-judgement and
+  after a flush.
+- When the manifest is restored or replaced, entries whose cluster no longer
+  exists are re-judged by their names against the current rules: one name a
+  rule still claims keeps the address and moves it to that cluster, no claimed
+  name releases it, and a `crowded` entry is never released because a name it
+  forgot may still be claimed. `dynet flush NAME|ADDRESS|PREFIX [--dry]`
+  re-judges chosen entries the same way on demand, without waiting for
+  retention: a name chooses itself and every name under it. A released entry
+  is decided `direct` and leaves the table once its sessions end. The order
+  travels as `/run/dynet/<instance>.flush` and is answered beside it, polled
+  each second, because this product declares nothing to listen on.
 
 - What the running service thinks of each node is recorded to
   `/run/dynet/<instance>.standing` on every sweep and read back by

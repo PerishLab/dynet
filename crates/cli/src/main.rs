@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use dynet_api::host;
 mod carry;
+mod flush;
 mod node;
 mod observation;
 mod watch;
@@ -44,6 +45,7 @@ enum Command {
     Standing,
     Divert(watch::Errand),
     Carry(carry::Errand),
+    Flush(flush::Errand),
     Resolve {
         #[arg(long)]
         manifest: PathBuf,
@@ -148,6 +150,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Standing => Boundary(instance).reading(),
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Carry(errand) => carry::carry(&errand),
+        Command::Flush(errand) => flush::flush(&instance, &errand),
         Command::Resolve {
             manifest,
             cluster,

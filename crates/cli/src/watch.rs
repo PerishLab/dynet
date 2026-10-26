@@ -1,5 +1,6 @@
+use dynet_api::host::Journal;
 use dynet_api::{inbound, manifest};
-use dynet_core::{Error, Instance, Ledger, Span};
+use dynet_core::{Error, Instance, Span};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -19,6 +20,10 @@ pub struct Errand {
     pub unit: bool,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
+    #[arg(long)]
+    pub ledger: Option<PathBuf>,
+    #[arg(long, default_value = "86400")]
+    pub retain: u64,
 }
 
 pub struct Stage<'a> {
@@ -47,7 +52,8 @@ fn staged<T>(
     let errand = stage.errand;
     let loaded = manifest::read(&errand.manifest)?;
     let held = std::sync::RwLock::new(Arc::new(inbound::Held::new(loaded, None)?));
-    let ledger = std::sync::Mutex::new(Ledger::new());
+    let journal = Journal::new(instance, errand.ledger.clone());
+    let ledger = std::sync::Mutex::new(journal.load(errand.retain)?);
     let reload = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
@@ -57,6 +63,7 @@ fn staged<T>(
         instance,
         held: &held,
         ledger: &ledger,
+        journal: &journal,
         source: &errand.manifest,
         reload: &reload,
         port: stage.port,
@@ -65,6 +72,7 @@ fn staged<T>(
         store: &inbound::Store::new(),
         told: &told,
     };
+    warren.rejudged();
     act(&warren)
 }
 
@@ -91,6 +99,10 @@ fn told(name: &str, errand: &Errand) -> String {
         format!("--claim {}", errand.claim),
         format!("--upstream {}", errand.upstream),
     ];
+    parts.push(format!("--retain {}", errand.retain));
+    if let Some(ledger) = &errand.ledger {
+        parts.push(format!("--ledger {}", ledger.display()));
+    }
     parts.push("--seconds 0".to_string());
     parts.join(" ")
 }
@@ -110,6 +122,9 @@ pub fn unit(name: &str, errand: &Errand) -> String {
         String::new(),
         "[Service]".to_string(),
         "Type=simple".to_string(),
+        "StateDirectory=dynet".to_string(),
+        "RuntimeDirectory=dynet".to_string(),
+        "RuntimeDirectoryPreserve=yes".to_string(),
         format!("ExecStartPre=-/usr/local/bin/dynet --instance {name} down"),
         format!(
             "ExecStartPre=/usr/local/bin/dynet --instance {name} up --claim {}{bare}",

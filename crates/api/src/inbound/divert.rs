@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(5);
 const SWEEP: Duration = Duration::from_secs(30);
+const HEED: Duration = Duration::from_secs(1);
 const CROWD: usize = 256;
 
 pub struct Divert<'a> {
@@ -33,6 +34,7 @@ pub struct Divert<'a> {
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
     let (span, patience, transit) = ground;
+    warren.settle()?;
     let listener = TcpListener::bind((span.seat(), 0))
         .map_err(|error| Error::new(format!("cannot seat the diverter: {error}")))?;
     let seat = listener
@@ -89,11 +91,16 @@ impl Divert<'_> {
         let mut room = vec![0; ROOM];
         let started = Instant::now();
         let mut swept = Duration::ZERO;
+        let mut heeded = Duration::ZERO;
         while lasting(started, span) {
             let since = started.elapsed();
             if since >= swept + SWEEP {
                 swept = since;
                 self.glean(started);
+            }
+            if since >= heeded + HEED {
+                heeded = since;
+                self.warren.heed();
             }
             if self.warren.reload.swap(false, Ordering::Relaxed) {
                 self.warren.renew();
@@ -111,6 +118,7 @@ impl Divert<'_> {
             }
         }
         self.done.store(true, Ordering::Relaxed);
+        self.warren.heed();
         Ok(())
     }
 
@@ -199,7 +207,6 @@ impl Divert<'_> {
     }
 
     fn glean(&self, started: Instant) {
-        self.warren.forget();
         super::standing::record(self.warren, &self.warren.current().pools, started);
         let Ok(mut book) = self.book.lock() else {
             return;
@@ -211,7 +218,9 @@ impl Divert<'_> {
         }
         let gone = book.reap();
         let standing = book.standing();
+        let engaged = book.engaged();
         drop(book);
+        self.warren.forget(&engaged);
         if gone > 0 {
             (self.told())(&format!("released {gone} sessions, {standing} standing"));
         }

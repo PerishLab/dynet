@@ -1,11 +1,9 @@
 use super::{base, read};
 use dynet_core::{
-    Bearing, Course, Decision, Domain, Ground, Issue, Ledger, Manifest, Name, Refusal, Sight, Told,
-    decide,
+    Bearing, Course, Decision, Domain, Ground, Ledger, Manifest, Name, Refusal, Sight, Told, decide,
 };
 use serde_json::{Value, json};
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
 
 const HELD: &str = "157.240.1.1";
 const ISSUED: &str = "203.0.113.5";
@@ -14,7 +12,6 @@ const PLAIN: &str = "198.51.100.7";
 struct Case {
     manifest: Manifest,
     ledger: Ledger,
-    now: Instant,
 }
 
 fn name(value: &str) -> Name {
@@ -26,15 +23,12 @@ fn address(value: &str) -> IpAddr {
 }
 
 fn case(value: &Value) -> Case {
-    let now = Instant::now();
-    let mut ledger = Ledger::new();
+    let mut ledger = Ledger::default();
     let domain = Domain::new("cdn.example.com").expect("domain");
-    let issue = Issue::new(domain, name("shared"), now + Duration::from_secs(300));
-    ledger.record(address(ISSUED), issue);
+    ledger.record(address(ISSUED), (&domain, &name("shared")), (300, 0));
     Case {
         manifest: read(value).expect("manifest"),
         ledger,
-        now,
     }
 }
 
@@ -81,7 +75,7 @@ fn each(mut check: impl FnMut(&Case, &Sight, &Decision)) {
     for value in variants() {
         let case = case(&value);
         for sight in sights() {
-            let decision = decide(&case.manifest, &case.ledger, &sight, case.now);
+            let decision = decide(&case.manifest, &case.ledger, &sight);
             check(&case, &sight, &decision);
         }
     }
@@ -133,7 +127,7 @@ fn borrowed() {
             told: None,
             ..sight.clone()
         };
-        let alone = decide(&case.manifest, &case.ledger, &bare, case.now);
+        let alone = decide(&case.manifest, &case.ledger, &bare);
         assert_eq!(decision, &alone, "I3: {sight:?}");
     });
 }
@@ -160,7 +154,7 @@ fn shared() {
         let Some(told @ Told::Own(_)) = &sight.told else {
             return;
         };
-        let issued = case.ledger.lookup(sight.address, case.now).is_some();
+        let issued = case.ledger.lookup(sight.address).is_some();
         let free =
             claimed(case, told).is_none() && case.manifest.table().held(sight.address).is_none();
         if issued && free {
@@ -177,7 +171,7 @@ fn decided(value: &Value, told: Option<Told>, target: &str, bearing: Bearing) ->
         address: address(target),
         bearing,
     };
-    decide(&case.manifest, &case.ledger, &sight, case.now)
+    decide(&case.manifest, &case.ledger, &sight)
 }
 
 #[test]

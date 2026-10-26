@@ -1,6 +1,5 @@
-use dynet_core::{Domain, Issue, Ledger, Name, Range, Rule, Subject, Table, spared};
+use dynet_core::{Domain, Name, Range, Rule, Subject, Table, spared};
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
 
 fn name(value: &str) -> Name {
     Name::new(value).expect("cluster name")
@@ -131,51 +130,4 @@ fn spares() {
         "a range enclosing a reserved one refuses"
     );
     assert!(!spared(address("8.8.8.8")));
-}
-
-#[test]
-fn expires() {
-    let mut ledger = Ledger::new();
-    let now = Instant::now();
-    let issue = Issue::new(
-        domain("a.example.com"),
-        name("hongkong"),
-        now + Duration::from_secs(60),
-    );
-    assert!(ledger.record(address("203.0.113.1"), issue));
-    assert!(ledger.lookup(address("203.0.113.1"), now).is_some());
-    let later = now + Duration::from_secs(61);
-    assert!(ledger.lookup(address("203.0.113.1"), later).is_none());
-    assert_eq!(ledger.sweep(later), vec![address("203.0.113.1")]);
-    assert!(ledger.empty());
-}
-
-#[test]
-fn contested() {
-    let mut ledger = Ledger::new();
-    let expiry = Instant::now() + Duration::from_secs(60);
-    let shared = address("203.0.113.9");
-    ledger.record(shared, Issue::new(domain("a.com"), name("one"), expiry));
-    ledger.record(shared, Issue::new(domain("b.com"), name("one"), expiry));
-    assert_eq!(
-        ledger.contested(),
-        0,
-        "one cluster sharing an address is no contest"
-    );
-    ledger.record(shared, Issue::new(domain("c.com"), name("two"), expiry));
-    assert_eq!(ledger.contested(), 1);
-}
-
-#[test]
-fn unissued() {
-    let mut ledger = Ledger::new();
-    let expiry = Instant::now() + Duration::from_secs(60);
-    for kept in ["10.1.2.3", "192.168.1.1", "198.18.0.5", "127.0.0.1"] {
-        let issue = Issue::new(domain("a.com"), name("one"), expiry);
-        assert!(
-            !ledger.record(address(kept), issue),
-            "{kept} is never issued"
-        );
-    }
-    assert!(ledger.empty());
 }

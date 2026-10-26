@@ -2,7 +2,6 @@ use super::Divert;
 use crate::inbound::warren::Chosen;
 use dynet_core::{Bearing, Course, Ground, Sight};
 use std::net::{IpAddr, SocketAddrV4};
-use std::time::Instant;
 
 impl Divert<'_> {
     pub(in crate::inbound) fn route(
@@ -58,7 +57,7 @@ impl Divert<'_> {
     pub(in crate::inbound) fn issued(&self, target: SocketAddrV4) -> Option<String> {
         let ledger = self.warren.ledger.lock().ok()?;
         ledger
-            .lookup(IpAddr::V4(*target.ip()), Instant::now())
+            .lookup(IpAddr::V4(*target.ip()))
             .map(|issue| issue.domain().get().to_string())
     }
 }
