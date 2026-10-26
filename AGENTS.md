@@ -23,9 +23,12 @@ are.
 - `crates/tun` owns the packet device on each platform as `dynet-tun`: open
   a device by name, read its identity and MTU, read and write one IP packet,
   wait. Linux opens `/dev/net/tun`; Windows binds Wintun by hand. It is the
-  only crate that holds unsafe code; routes, DNS, exemption, firewall and
-  service stay in `api`'s host layer.
-- Dependency direction is `cli -> api -> lib`, and `api -> tun`.
+  crate that owns unsafe packet-device calls.
+- `crates/windows` owns the unsafe Windows host calls as `dynet-windows`:
+  IP Helper, socket interface binding, WFP and SCM. `api`'s host layer owns
+  their product policy and NRPT integration.
+- Dependency direction is `cli -> api -> lib`, `api -> tun`, and the Windows
+  host and CLI service dispatcher depend on `windows`.
 - Keep the API independent of CLI presentation concerns.
 - Add product vocabulary only when its behavior and ownership have been
   explicitly settled.
@@ -248,7 +251,8 @@ are.
   it. Per-caller standing is deliberately not kept.
 
 - Dynet carries no sixth-version address, and it says so only about what it
-  carries. A name a rule claims is answered with no sixth address, so a caller
+  carries. A name a rule claims is answered with no sixth address or HTTPS/SVCB
+  hints, so a caller
   falls back to the fourth version and leaves through a node; a name no rule
   claims is relayed to the upstream unchanged, sixth-version answer and all, so
   what this product does not carry keeps whatever the network offers it.
@@ -332,11 +336,41 @@ for Linux alone and refuses elsewhere rather than pretending: socket marks and
 transparent seats are Linux's; the keepalive retry count is set where the
 platform exposes it.
 
+## Windows
+
+Windows captures only this host. IP Helper installs routes for issued IPv4
+addresses and held prefixes, replacing Linux's per-instance policy table.
+Dynet's own sockets bind the physical uplink through `IP_UNICAST_IF` (and
+`IPV6_UNICAST_IF`) instead of a mark; the uplink is refreshed every five seconds.
+NRPT sends the root namespace to the resolver seat on port 53. WFP blocks
+other port-53 traffic and protects each captured prefix, permitting traffic
+through the tunnel and from this executable. Its provider, sublayer and
+filters have instance-derived identities; only those objects are reconciled.
+
+The wall is installed before captured routes and answers, and both route and
+filter projections are read back. A capture failure withholds the DNS answer.
+Persistent WFP filters and NRPT survive a killed process. Starting again
+replaces rules transactionally without first lowering the old protection.
+A stranded resolver is reported by `doctor`; `down` stops the named service
+and explicitly removes protection. Forwarded capture, transparent seats and
+`--bare` refuse on Windows.
+
+SCM starts the service, restarts failures after five seconds and receives
+readiness only after the packet device, projection and resolver socket are
+ready. A stop ends the workers and lowers protection; shutdown keeps the
+persistent protection for next boot. State lives in `%ProgramData%/dynet`,
+runtime snapshots and flush orders in its `run` directory. The instance's
+`.log` file records service events without protocol material.
+
+The name-based boundary depends on callers using the resolver seat. Arbitrary
+application DoH or an IPv6 address acquired elsewhere is not made visible by
+NRPT or the IPv4 capture path. Do not claim that those paths are contained
+without independent evidence and an explicit deployment policy.
+
 ## Release
 
 `plumb.toml` declares the product `dynet`, its authority and the one binary
-`dynet` for Linux alone, since the TUN device, socket marks and transparent
-seats it drives exist nowhere else; nothing else publishes. The workspace declares
+`dynet` for Linux GNU and Windows MSVC on x86-64; nothing else publishes. The workspace declares
 version `0.0.0`, and `crates/cli` carries the release identity region through
 `plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
 release follows Plumb's lifecycle (`plumb release --help`); wharf publishes it.

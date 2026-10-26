@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-#[derive(clap::Args)]
+#[derive(Clone, clap::Args)]
 pub struct Errand {
     #[arg(long)]
     pub manifest: PathBuf,
@@ -24,6 +24,8 @@ pub struct Errand {
     pub ledger: Option<PathBuf>,
     #[arg(long, default_value = "86400")]
     pub retain: u64,
+    #[arg(long)]
+    pub service: bool,
 }
 
 pub struct Stage<'a> {
@@ -38,18 +40,41 @@ pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
         print!("{}", unit(instance.get(), stage.errand));
         return Ok(ExitCode::SUCCESS);
     }
-    let patience = std::time::Duration::from_secs(stage.errand.seconds);
-    let ground = (stage.span, patience, stage.transit);
-    let served = staged(instance, stage, |warren| inbound::divert(warren, ground))?;
+    if stage.errand.service {
+        return served(instance, stage);
+    }
+    let halt = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
+    for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        signal_hook::flag::register(signal, Arc::clone(&halt))
+            .map_err(|error| Error::new(format!("cannot listen for a halt: {error}")))?;
+    }
+    let told = |line: &str| println!("  {line}");
+    let served = carried(instance, stage, (&halt, &told))?;
     Ok(recount(&served))
 }
 
-fn staged<T>(
+#[cfg(windows)]
+fn served(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
+    crate::windows::serve(instance, stage)
+}
+
+#[cfg(not(windows))]
+fn served(_: &Instance, _: &Stage) -> Result<ExitCode, Error> {
+    Err(Error::new(
+        "--service runs under the Windows Service Control Manager; here, install --unit",
+    ))
+}
+
+pub fn carried(
     instance: &Instance,
     stage: &Stage,
-    act: impl FnOnce(&inbound::Warren) -> Result<T, Error>,
-) -> Result<T, Error> {
+    told: (&AtomicBool, &(dyn Fn(&str) + Sync)),
+) -> Result<inbound::Served, Error> {
     let errand = stage.errand;
+    let (halt, told) = told;
+    let patience = std::time::Duration::from_secs(errand.seconds);
+    let ground = (stage.span, patience, stage.transit);
     let loaded = manifest::read(&errand.manifest)?;
     let held = std::sync::RwLock::new(Arc::new(inbound::Held::new(loaded, None)?));
     let journal = Journal::new(instance, errand.ledger.clone());
@@ -58,7 +83,6 @@ fn staged<T>(
     #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
         .map_err(|error| Error::new(format!("cannot listen for a reload: {error}")))?;
-    let told = |line: &str| println!("  {line}");
     let warren = inbound::Warren {
         instance,
         held: &held,
@@ -66,14 +90,15 @@ fn staged<T>(
         journal: &journal,
         source: &errand.manifest,
         reload: &reload,
+        halt,
         port: stage.port,
         upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(instance.mark()),
         store: &inbound::Store::new(),
-        told: &told,
+        told,
     };
     warren.rejudged();
-    act(&warren)
+    inbound::divert(&warren, ground)
 }
 
 pub fn recount(served: &inbound::Served) -> ExitCode {

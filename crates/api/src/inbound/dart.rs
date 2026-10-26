@@ -5,7 +5,6 @@ use super::link::{Link, Taken};
 use super::warren::{self, Charge, Chosen};
 use dynet_core::{Bearing, Sight, Verdict};
 use std::collections::HashMap;
-use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
 use std::sync::Mutex;
 use std::sync::mpsc::SyncSender;
@@ -88,18 +87,6 @@ impl Divert<'_> {
             true => self.tally(|served| served.faulted += 1),
             false => self.tally(|served| served.answered += 1),
         }
-    }
-
-    fn carry(&self, near: TcpStream, mut link: Link, charge: Option<&Charge>) {
-        let Ok(again) = near.try_clone() else {
-            return;
-        };
-        let sending = link.upward();
-        std::thread::scope(|scope| {
-            scope.spawn(|| push(again, sending));
-            drain(near, &link);
-        });
-        self.judge(&link, charge);
     }
 
     pub(super) fn flock(&self, darts: &UdpSocket) {
@@ -256,25 +243,4 @@ fn shed(held: &Flock, port: u16) -> Option<Duration> {
         return None;
     }
     Some(IDLE - spent)
-}
-
-fn push(mut from: TcpStream, sending: Option<SyncSender<Vec<u8>>>) {
-    let Some(sending) = sending else {
-        return;
-    };
-    let mut room = [0u8; 16384];
-    while let Ok(size) = from.read(&mut room) {
-        if size == 0 || sending.send(room[..size].to_vec()).is_err() {
-            break;
-        }
-    }
-}
-
-fn drain(mut into: TcpStream, link: &Link) {
-    while let Some(body) = link.wait() {
-        if into.write_all(&body).is_err() {
-            break;
-        }
-    }
-    let _ = into.shutdown(std::net::Shutdown::Write);
 }

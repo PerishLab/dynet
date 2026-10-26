@@ -38,6 +38,10 @@ impl Span {
         format!("{}/{}", self.base, self.prefix)
     }
 
+    pub fn prefix(self) -> u8 {
+        self.prefix
+    }
+
     pub fn seat(self) -> Ipv4Addr {
         Ipv4Addr::from(u32::from(self.base) + 1)
     }

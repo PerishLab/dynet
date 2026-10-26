@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const STATE: &str = "/var/lib/dynet";
-const RUN: &str = "/run/dynet";
-
 pub struct Journal {
     path: PathBuf,
     order: PathBuf,
@@ -17,8 +14,8 @@ impl Journal {
     pub fn new(instance: &Instance, path: Option<PathBuf>) -> Self {
         let name = instance.get();
         Self {
-            path: path.unwrap_or_else(|| Path::new(STATE).join(format!("{name}.ledger"))),
-            order: Path::new(RUN).join(format!("{name}.flush")),
+            path: path.unwrap_or_else(|| super::kept().join(format!("{name}.ledger"))),
+            order: super::passing().join(format!("{name}.flush")),
             stained: AtomicBool::new(false),
         }
     }

@@ -1,6 +1,8 @@
 mod peek;
 mod roll;
 mod route;
+mod stage;
+mod stream;
 mod usher;
 
 use super::lasting;
@@ -10,7 +12,7 @@ use dynet_tun::{Device, ROOM};
 pub(super) use roll::Held;
 use roll::Roll;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
@@ -34,15 +36,18 @@ pub struct Divert<'a> {
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
     let (span, patience, transit) = ground;
-    warren.settle()?;
-    let listener = TcpListener::bind((span.seat(), 0))
-        .map_err(|error| Error::new(format!("cannot seat the diverter: {error}")))?;
+    let stage::Seats {
+        device,
+        listener,
+        darts,
+        resolver,
+    } = stage::stage(warren, span)?;
+    #[cfg(windows)]
+    dynet_windows::ready();
     let seat = listener
         .local_addr()
         .map_err(|error| Error::new(format!("cannot read the diverter seat: {error}")))?
         .port();
-    let darts = UdpSocket::bind((span.seat(), 0))
-        .map_err(|error| Error::new(format!("cannot seat the datagram diverter: {error}")))?;
     let dart = darts
         .local_addr()
         .map_err(|error| Error::new(format!("cannot read the datagram seat: {error}")))?
@@ -70,13 +75,13 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         let _ = seat;
     }
     std::thread::scope(|scope| {
-        scope.spawn(|| stand(warren, (span.seat(), patience)));
+        scope.spawn(|| stand(warren, patience, &resolver));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
         if let Some(seat) = &ushered {
             scope.spawn(|| divert.usher(seat, transit));
         }
-        divert.pump(patience)
+        divert.pump(&device, patience)
     })?;
     divert
         .served
@@ -85,14 +90,20 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
 }
 
 impl Divert<'_> {
-    fn pump(&self, span: Duration) -> Result<(), Error> {
-        let device = Device::open(self.warren.instance.get())
-            .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
+    fn pump(&self, device: &Device, span: Duration) -> Result<(), Error> {
+        let carried = self.circulate(device, span);
+        self.done.store(true, Ordering::Relaxed);
+        self.warren.halt.store(true, Ordering::Relaxed);
+        self.warren.heed();
+        carried
+    }
+
+    fn circulate(&self, device: &Device, span: Duration) -> Result<(), Error> {
         let mut room = vec![0; ROOM];
         let started = Instant::now();
         let mut swept = Duration::ZERO;
         let mut heeded = Duration::ZERO;
-        while lasting(started, span) {
+        while lasting(started, span) && !self.warren.halted() {
             let since = started.elapsed();
             if since >= swept + SWEEP {
                 swept = since;
@@ -117,8 +128,6 @@ impl Divert<'_> {
                 let _ = device.send(carried);
             }
         }
-        self.done.store(true, Ordering::Relaxed);
-        self.warren.heed();
         Ok(())
     }
 

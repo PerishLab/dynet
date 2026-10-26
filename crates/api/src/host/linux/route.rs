@@ -1,6 +1,7 @@
-use super::fragment::Fragment;
-use super::{attempt, run};
+use super::super::Fragment;
+use super::super::{attempt, run};
 use dynet_core::{Error, Instance, Span};
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 const WHOLE: &str = "/0";
@@ -123,16 +124,12 @@ impl Route {
         .map(|_| ())
     }
 
-    pub fn hold(instance: &Instance, address: &str) -> bool {
-        let name = instance.get();
+    pub fn hold(instance: &Instance, address: IpAddr) -> bool {
         let route = format!("{address}/32");
-        attempt("ip", &["route", "add", &route, "dev", name, "table", name])
-    }
-
-    pub fn release(instance: &Instance, address: &str) -> bool {
-        let name = instance.get();
-        let route = format!("{address}/32");
-        attempt("ip", &["route", "del", &route, "dev", name, "table", name])
+        let owned = super::settle::owned(instance.get());
+        let mut told = vec!["route", "replace", &route];
+        told.extend(owned.split(' '));
+        attempt("ip", &told)
     }
 
     pub fn destroy(instance: &Instance) -> Result<bool, Error> {

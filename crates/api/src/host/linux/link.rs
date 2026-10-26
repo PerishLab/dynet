@@ -1,4 +1,4 @@
-use super::{attempt, run};
+use super::super::{attempt, run};
 use dynet_core::{Error, Instance, Span};
 
 const ROOM: &str = "16384";
@@ -25,6 +25,17 @@ impl Link {
         run("ip", &["addr", "add", &span.worn(), "dev", name])?;
         run("ip", &["link", "set", name, "up"])?;
         Ok(())
+    }
+
+    pub fn dress(instance: &Instance, span: Span) -> Result<(), Error> {
+        match Self::present(instance) {
+            true => Ok(()),
+            false => Err(Error::new(format!(
+                "{} is absent; raise it with dynet up before diverting through {}",
+                instance.get(),
+                span.get()
+            ))),
+        }
     }
 
     pub fn destroy(instance: &Instance) -> Result<bool, Error> {

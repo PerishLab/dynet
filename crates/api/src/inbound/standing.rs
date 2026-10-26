@@ -4,8 +4,6 @@ use dynet_core::{Bearing, Instance, Label, Name, Policy, Selector, Standing};
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const ROOT: &str = "/run/dynet";
-
 struct Reading {
     cluster: Name,
     bearing: Bearing,
@@ -14,7 +12,7 @@ struct Reading {
 }
 
 pub fn path(instance: &Instance) -> PathBuf {
-    PathBuf::from(format!("{ROOT}/{}.standing", instance.get()))
+    crate::host::passing().join(format!("{}.standing", instance.get()))
 }
 
 pub fn record(warren: &Warren, pools: &Pools, started: Instant) {

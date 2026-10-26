@@ -3,9 +3,9 @@ use super::store::{Key, Recall};
 use super::warren::{self, Chosen, Warren};
 use crate::host::{Route, clock};
 use crate::outbound::Listener;
-use crate::resolver::{self, Answer, Packet, QUAD, Query};
+use crate::resolver::{self, Answer, Packet, Query};
 use dynet_core::{Bearing, Domain, Error, Fault, Name, Verdict, spared};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 const REST: Duration = Duration::from_millis(200);
@@ -23,18 +23,12 @@ struct Post<'a> {
     socket: &'a UdpSocket,
 }
 
-pub fn attend(warren: &Warren, ground: (Ipv4Addr, Duration)) -> Result<(), Error> {
-    let (seat, span) = ground;
-    let socket = UdpSocket::bind((seat, warren.port))
-        .map_err(|error| Error::new(format!("cannot hold the resolver port: {error}")))?;
+pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(), Error> {
     let _ = socket.set_read_timeout(Some(REST));
-    let post = Post {
-        warren,
-        socket: &socket,
-    };
+    let post = Post { warren, socket };
     let started = Instant::now();
     std::thread::scope(|scope| {
-        while lasting(started, span) {
+        while lasting(started, span) && !warren.halted() {
             let mut room = [0u8; ROOM];
             let Ok((size, peer)) = socket.recv_from(&mut room) else {
                 continue;
@@ -61,8 +55,8 @@ impl Post<'_> {
     fn settle(&self, call: &Call) -> Result<String, Error> {
         let asking = Packet::new(&call.asked);
         let query = asking.asked()?;
-        if query.kind == QUAD {
-            return self.sixth(&asking, call, &query);
+        if query.hints() {
+            return self.limited(&asking, call, &query);
         }
         let domain = Domain::new(&query.name)?;
         let Some(cluster) = self.warren.claimed(&domain) else {
@@ -106,19 +100,19 @@ impl Post<'_> {
         ))
     }
 
-    fn sixth(&self, asking: &Packet, call: &Call, query: &Query) -> Result<String, Error> {
+    fn limited(&self, asking: &Packet, call: &Call, query: &Query) -> Result<String, Error> {
         if self.carried(&query.name) {
             self.speak(&asking.barren(query), call)?;
             return Ok(format!(
-                "{} asked for a sixth address, answered none because this carries it",
-                query.name
+                "{} asked for type {}, answered none because this carries it",
+                query.name, query.kind
             ));
         }
         let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
         self.speak(&plain, call)?;
         Ok(format!(
-            "{} asked for a sixth address, left to the upstream",
-            query.name
+            "{} asked for type {}, left to the upstream",
+            query.name, query.kind
         ))
     }
 
@@ -157,6 +151,9 @@ impl Post<'_> {
         });
         drop(ledger);
         if live {
+            for item in found {
+                capture(self.warren.instance, IpAddr::V4(item.address))?;
+            }
             return Ok(());
         }
         self.keep(domain, found, cluster)?;
@@ -199,7 +196,8 @@ impl Post<'_> {
         for item in found {
             let address = IpAddr::V4(item.address);
             if ledger.record(address, (domain, cluster), told) {
-                Route::hold(self.warren.instance, &address.to_string());
+                self.warren.journal.stain();
+                capture(self.warren.instance, address)?;
                 held += 1;
             }
         }
@@ -265,6 +263,15 @@ fn spare(framed: &[u8]) -> Result<Option<Vec<u8>>, Error> {
 
 fn poisoned() -> Error {
     Error::new("a lock was left poisoned by a dead thread")
+}
+
+fn capture(instance: &dynet_core::Instance, address: IpAddr) -> Result<(), Error> {
+    match Route::hold(instance, address) {
+        true => Ok(()),
+        false => Err(Error::new(format!(
+            "cannot capture {address}, so its answer is withheld"
+        ))),
+    }
 }
 
 fn gather(listener: &mut Listener) -> Result<Vec<u8>, Error> {

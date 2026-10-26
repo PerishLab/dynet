@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/api", "crates/cli", "crates/lib", "crates/tun"]
+members = ["crates/api", "crates/cli", "crates/lib", "crates/tun", "crates/windows"]
 
 [workspace.package]
 version = "0.0.0"
@@ -17,6 +17,7 @@ clap = { version = "4.5", features = ["derive"] }
 dynet-api = { path = "crates/api" }
 dynet-core = { path = "crates/lib" }
 dynet-tun = { path = "crates/tun" }
+dynet-windows = { path = "crates/windows" }
 plumb = { version = "0", registry = "perish", default-features = false, features = ["observation"] }
 aes = "0.8"
 aes-gcm = "0.10"
@@ -34,4 +35,4 @@ socket2 = { version = "0.5", features = ["all"] }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
 libc = "0.2"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_WinSock", "Win32_Security", "Win32_System_LibraryLoader", "Win32_System_Rpc", "Win32_System_Services", "Win32_System_Threading"] }

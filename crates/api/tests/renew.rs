@@ -52,6 +52,7 @@ fn renews() {
         journal: &journal,
         source: &source,
         reload: &AtomicBool::new(false),
+        halt: &AtomicBool::new(false),
         port: 0,
         upstream: "192.0.2.53",
         book: &Book::new(0),

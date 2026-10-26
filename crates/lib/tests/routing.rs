@@ -78,6 +78,28 @@ fn prefixes() {
 }
 
 #[test]
+fn masks() {
+    for (told, base) in [
+        ("203.0.113.199/24", "203.0.113.0"),
+        ("203.0.113.199/0", "0.0.0.0"),
+        ("203.0.113.199/32", "203.0.113.199"),
+        ("2001:db8:1:2::9/48", "2001:db8:1::"),
+        ("2001:db8::9/0", "::"),
+        ("2001:db8::9/128", "2001:db8::9"),
+    ] {
+        let range = Range::read(told).expect("range");
+        assert_eq!(range.masked().base(), address(base), "{told}");
+        assert_eq!(range.masked().prefix(), range.prefix());
+        assert_eq!(range.masked().masked(), range.masked());
+    }
+    for told in ["203.0.113.9", "2001:db8::9"] {
+        let range = Range::host(address(told));
+        assert!(range.holds(address(told)));
+        assert_eq!(range.masked(), range);
+    }
+}
+
+#[test]
 fn single() {
     for (first, second) in [
         (

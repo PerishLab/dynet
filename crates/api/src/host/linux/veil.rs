@@ -1,4 +1,4 @@
-use super::{attempt, run};
+use super::super::{attempt, run};
 use dynet_core::{Error, Instance, Span};
 use std::net::Ipv4Addr;
 
