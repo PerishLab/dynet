@@ -3,7 +3,7 @@ use super::divert::Divert;
 use super::divert::Held;
 use super::link::{Link, Taken};
 use super::warren::{self, Charge, Chosen};
-use dynet_core::{Bearing, Ground, Verdict};
+use dynet_core::{Bearing, Sight, Verdict};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
@@ -55,30 +55,22 @@ impl Divert<'_> {
     }
 
     pub(super) fn tend(&self, stream: TcpStream, held: Held) {
-        let Some(chosen) = self.elect(&stream, held.target) else {
+        let Some((chosen, aimed)) = self.elect(&stream, held.target) else {
             self.tally(|served| served.refused += 1);
             return;
         };
         self.opened(held.target, &chosen);
-        let link = Link::open(
-            chosen.passage,
-            held.target.ip().to_string(),
-            held.target.port(),
-        );
-        self.carry(stream, link, &chosen.charge);
+        let link = Link::open(chosen.passage, aimed, held.target.port());
+        self.carry(stream, link, chosen.charge.as_ref());
     }
 
-    pub(super) fn choose(&self, target: SocketAddrV4, bearing: Bearing) -> Option<Chosen> {
-        let router = self.warren.router.lock().ok()?;
-        let decision = router.reached(IpAddr::V4(*target.ip()), Instant::now());
-        drop(router);
-        if decision.ground() == Ground::Named {
-            self.tally(|served| served.named += 1);
-        }
-        if bearing == Bearing::Datagram && !self.warren.bearing(decision.cluster()) {
-            return None;
-        }
-        self.warren.passage(self.pools, decision.cluster(), bearing)
+    pub(super) fn choose(&self, target: SocketAddrV4) -> Option<Chosen> {
+        let sight = Sight {
+            told: None,
+            address: IpAddr::V4(*target.ip()),
+            bearing: Bearing::Datagram,
+        };
+        self.route(target, &sight).map(|(chosen, _)| chosen)
     }
 
     pub(super) fn opened(&self, target: SocketAddrV4, chosen: &Chosen) {
@@ -86,11 +78,11 @@ impl Divert<'_> {
         self.tally(|served| served.accepted += 1);
     }
 
-    pub(super) fn judge(&self, link: &Link, charge: &Charge) {
+    pub(super) fn judge(&self, link: &Link, charge: Option<&Charge>) {
         let Some(verdict) = link.verdict() else {
             return;
         };
-        warren::observed(self.pools, charge, verdict);
+        warren::observed(self.warren, charge, verdict);
         (self.told())(&format!("verdict {verdict:?}"));
         match matches!(verdict, Verdict::Faulted(_)) {
             true => self.tally(|served| served.faulted += 1),
@@ -98,7 +90,7 @@ impl Divert<'_> {
         }
     }
 
-    fn carry(&self, near: TcpStream, mut link: Link, charge: &Charge) {
+    fn carry(&self, near: TcpStream, mut link: Link, charge: Option<&Charge>) {
         let Ok(again) = near.try_clone() else {
             return;
         };
@@ -147,11 +139,12 @@ impl Divert<'_> {
 
     fn open(&self, peer: SocketAddr, held: &Flock) -> Option<(Link, Charge)> {
         let kept = self.recall(peer.port())?;
-        let Some(chosen) = self.choose(kept.target, Bearing::Datagram) else {
+        let Some(chosen) = self.choose(kept.target) else {
             self.tally(|served| served.refused += 1);
             return None;
         };
         self.opened(kept.target, &chosen);
+        let charge = chosen.charge?;
         let mut link = Link::bear(
             chosen.passage,
             kept.target.ip().to_string(),
@@ -163,7 +156,7 @@ impl Divert<'_> {
             touched: Instant::now(),
         };
         held.lock().ok()?.insert(peer.port(), perch);
-        Some((link, chosen.charge))
+        Some((link, charge))
     }
 
     fn spill(&self, link: Link, charge: Charge, seat: (&UdpSocket, SocketAddr, &Flock)) {
@@ -174,7 +167,7 @@ impl Divert<'_> {
             patience = next;
         }
         if !borne {
-            self.judge(&link, &charge);
+            self.judge(&link, Some(&charge));
         }
         if let Ok(mut kept) = held.lock() {
             kept.remove(&peer.port());
@@ -224,7 +217,7 @@ impl Divert<'_> {
     }
 
     fn answer(&self, charge: &Charge) {
-        warren::observed(self.pools, charge, Verdict::Answered);
+        warren::observed(self.warren, Some(charge), Verdict::Answered);
         (self.told())("answered");
         self.tally(|served| served.answered += 1);
     }

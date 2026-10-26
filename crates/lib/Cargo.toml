@@ -10,3 +10,10 @@ publish = false
 [lib]
 name = "dynet_core"
 path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,21 +1,20 @@
 #![forbid(unsafe_code)]
 
-mod capability;
-mod cluster;
 mod error;
 mod instance;
-mod label;
+mod manifest;
 mod pool;
 mod routing;
 
-pub use capability::{Bearing, Capability, Carriage};
-pub use cluster::{Cluster, Name, Node};
 pub use error::Error;
 pub use instance::Instance;
-pub use label::Label;
-pub use pool::{Affinity, Blame, Fault, Policy, Pool, Selector, Spread, Standing, Verdict};
+pub use manifest::{
+    Bearing, Capability, Carriage, Cluster, DIRECT, Declared, Form, Label, Manifest, Name, Node,
+};
+pub use pool::{Affinity, Blame, Fault, Policy, Selector, Standing, Verdict};
 pub use routing::{
-    Decision, Domain, Ground, Issue, Ledger, Range, Router, Rule, Span, Subject, Table,
+    Course, Decision, Domain, Ground, Issue, Ledger, Range, Refusal, Rule, Sight, Span, Subject,
+    Table, Told, decide, reserved, spared, usable,
 };
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -1,9 +1,10 @@
 mod peek;
 mod roll;
+mod route;
 mod usher;
 
 use super::lasting;
-use super::warren::{Pools, Served, Warren, gather, renew, stand};
+use super::warren::{Served, Warren, stand};
 use dynet_core::{Error, Span};
 use dynet_tun::{Device, ROOM};
 pub(super) use roll::Held;
@@ -26,7 +27,6 @@ pub struct Divert<'a> {
     full: Once,
     done: AtomicBool,
     pub(super) warren: &'a Warren<'a>,
-    pub(super) pools: &'a Pools,
     pub(super) served: Mutex<Served>,
     pub(super) shy: Mutex<std::collections::HashMap<SocketAddrV4, usize>>,
 }
@@ -46,7 +46,6 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         .map_err(|error| Error::new(format!("cannot read the datagram seat: {error}")))?
         .port();
     (warren.told)(&format!("diverting to {}:{seat} and :{dart}", span.seat()));
-    let pools = gather(warren, Instant::now())?;
     let divert = Divert {
         span,
         seat,
@@ -55,7 +54,6 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         full: Once::new(),
         done: AtomicBool::new(false),
         warren,
-        pools: &pools,
         served: Mutex::new(Served::default()),
         shy: Mutex::new(std::collections::HashMap::new()),
     };
@@ -70,7 +68,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         let _ = seat;
     }
     std::thread::scope(|scope| {
-        scope.spawn(|| stand(warren, &pools, (span.seat(), patience)));
+        scope.spawn(|| stand(warren, (span.seat(), patience)));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
         if let Some(seat) = &ushered {
@@ -98,7 +96,7 @@ impl Divert<'_> {
                 self.glean(started);
             }
             if self.warren.reload.swap(false, Ordering::Relaxed) {
-                renew(self.warren);
+                self.warren.renew();
             }
             let held = device
                 .receive(&mut room)
@@ -202,7 +200,7 @@ impl Divert<'_> {
 
     fn glean(&self, started: Instant) {
         self.warren.forget();
-        super::standing::record(self.warren, self.pools, started);
+        super::standing::record(self.warren, &self.warren.current().pools, started);
         let Ok(mut book) = self.book.lock() else {
             return;
         };

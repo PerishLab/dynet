@@ -407,9 +407,11 @@ dependencies = [
  "md-5",
  "ml-kem",
  "rand_core",
+ "serde_json",
  "sha2",
  "smoltcp",
  "socket2",
+ "tempfile",
  "toml 0.8.23",
  "x25519-dalek",
 ]
@@ -417,6 +419,10 @@ dependencies = [
 [[package]]
 name = "dynet-core"
 version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "dynet-tun"

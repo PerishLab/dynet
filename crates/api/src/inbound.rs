@@ -4,7 +4,6 @@ mod link;
 pub mod sniff;
 pub mod standing;
 mod store;
-pub mod table;
 mod warden;
 mod warren;
 
@@ -19,4 +18,4 @@ pub(crate) fn lasting(started: Instant, span: Duration) -> bool {
 pub use divert::divert;
 pub use link::{Link, Taken};
 pub use store::Store;
-pub use warren::{Charge, Served, Warren};
+pub use warren::{Charge, Held, Served, Warren};

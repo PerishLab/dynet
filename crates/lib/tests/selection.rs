@@ -14,7 +14,7 @@ fn cluster(count: usize) -> Cluster {
             )
         })
         .collect();
-    Cluster::new(Name::new("provider").expect("name"), nodes).expect("cluster")
+    Cluster::pool(Name::new("provider").expect("name"), nodes).expect("cluster")
 }
 
 fn policy() -> Policy {
@@ -154,7 +154,7 @@ fn mixed() -> Cluster {
             Capability::new(Carriage::Absent),
         ),
     ];
-    Cluster::new(Name::new("provider").expect("name"), nodes).expect("cluster")
+    Cluster::pool(Name::new("provider").expect("name"), nodes).expect("cluster")
 }
 
 #[test]

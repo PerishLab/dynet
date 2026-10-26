@@ -1,15 +1,16 @@
 use super::store::Store;
 use super::warden;
+use crate::manifest::{self, Loaded};
 use crate::outbound::{Book, Passage, Roster};
-use crate::subscription::Entry;
 use dynet_core::{
-    Bearing, Cluster, Error, Instance, Label, Name, Policy, Router, Selector, Verdict,
+    Bearing, Cluster, Decision, Domain, Error, Form, Instance, Label, Ledger, Name, Policy,
+    Selector, Sight, Verdict, decide, usable,
 };
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 pub type Pools = HashMap<Name, Mutex<Selector>>;
@@ -35,17 +36,21 @@ pub struct Charge {
 }
 
 pub struct Chosen {
-    pub charge: Charge,
+    pub charge: Option<Charge>,
     pub told: String,
     pub passage: Passage,
 }
 
+pub struct Held {
+    pub loaded: Loaded,
+    pub pools: Pools,
+}
+
 pub struct Warren<'a> {
     pub instance: &'a Instance,
-    pub entries: &'a [Entry],
-    pub clusters: &'a [Cluster],
-    pub router: &'a Mutex<Router>,
-    pub table: &'a Path,
+    pub held: &'a RwLock<Arc<Held>>,
+    pub ledger: &'a Mutex<Ledger>,
+    pub source: &'a Path,
     pub reload: &'a AtomicBool,
     pub port: u16,
     pub upstream: &'a str,
@@ -54,13 +59,65 @@ pub struct Warren<'a> {
     pub told: &'a (dyn Fn(&str) + Sync),
 }
 
+impl Held {
+    pub fn new(loaded: Loaded, earlier: Option<&Self>) -> Result<Self, Error> {
+        let policy = Policy::new(HALF, FLOOR)?;
+        let now = Instant::now();
+        let mut pools = Pools::new();
+        for cluster in loaded.manifest().clusters() {
+            if !matches!(cluster.form(), Form::Pool(_)) {
+                continue;
+            }
+            let kept = earlier.and_then(|held| held.kept(cluster));
+            let selector = kept.unwrap_or_else(|| Selector::new(cluster, policy, now));
+            pools.insert(cluster.name().clone(), Mutex::new(selector));
+        }
+        Ok(Self { loaded, pools })
+    }
+
+    fn kept(&self, cluster: &Cluster) -> Option<Selector> {
+        let standing = self.loaded.manifest().cluster(cluster.name())?;
+        if standing.nodes() != cluster.nodes() {
+            return None;
+        }
+        self.pools
+            .get(cluster.name())?
+            .lock()
+            .ok()
+            .map(|held| held.clone())
+    }
+}
+
 impl Warren<'_> {
+    pub fn current(&self) -> Arc<Held> {
+        match self.held.read() {
+            Ok(held) => Arc::clone(&held),
+            Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+        }
+    }
+
+    pub fn decide(&self, sight: &Sight) -> Option<Decision> {
+        let held = self.current();
+        let ledger = self.ledger.lock().ok()?;
+        Some(decide(
+            held.loaded.manifest(),
+            &ledger,
+            sight,
+            Instant::now(),
+        ))
+    }
+
+    pub fn claimed(&self, domain: &Domain) -> Option<Name> {
+        let held = self.current();
+        held.loaded.manifest().table().claimed(domain).cloned()
+    }
+
     pub fn forget(&self) {
-        let Ok(mut router) = self.router.lock() else {
+        let Ok(mut ledger) = self.ledger.lock() else {
             return;
         };
-        let gone = router.forget(Instant::now());
-        drop(router);
+        let gone = ledger.sweep(Instant::now());
+        drop(ledger);
         for address in &gone {
             crate::host::Route::release(self.instance, &address.to_string());
         }
@@ -69,56 +126,86 @@ impl Warren<'_> {
         }
     }
 
-    pub fn passage(&self, pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
-        let cluster = self.clusters.iter().find(|item| item.name() == wanted)?;
-        let label = chosen(pools, wanted, bearing)?;
-        let roster = Roster::new(self.entries, self.instance.mark());
-        let Some(front) = cluster.via() else {
-            let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
-            let told = label.get().to_string();
-            let charge = Charge {
-                cluster: wanted.clone(),
-                label,
-                bearing,
-            };
+    pub fn passage(&self, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
+        let held = self.current();
+        usable(held.loaded.manifest(), wanted, bearing).ok()?;
+        let cluster = held.loaded.manifest().pool(wanted)?;
+        let roster = Roster::new(held.loaded.entries(), self.instance.mark());
+        let (front, exit) = match cluster.form() {
+            Form::Pool(_) => (cluster.name(), None),
+            Form::Via(front, exit) => (front, Some(exit)),
+            Form::Alias(_) => return None,
+        };
+        let label = chosen(&held.pools, front, bearing)?;
+        let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
+        let charge = Some(Charge {
+            cluster: front.clone(),
+            label: label.clone(),
+            bearing,
+        });
+        let Some(exit) = exit else {
             return Some(Chosen {
                 charge,
-                told,
+                told: label.get().to_string(),
                 passage: Passage::Plain(endpoint),
             });
         };
-        let leading = chosen(pools, front, bearing)?;
-        let endpoint = roster.posted(&leading, self.book, self.upstream).ok()?;
-        let exit = roster.exit(&label).ok()?;
-        let told = format!("{} through {}", label.get(), leading.get());
-        let charge = Charge {
-            cluster: front.clone(),
-            label: leading,
-            bearing,
-        };
         Some(Chosen {
             charge,
-            told,
-            passage: Passage::Veiled(endpoint, exit),
+            told: format!("{} through {}", exit.get(), label.get()),
+            passage: Passage::Veiled(endpoint, roster.exit(exit).ok()?),
         })
     }
 
-    pub fn bearing(&self, wanted: &Name) -> bool {
-        self.clusters
-            .iter()
-            .find(|item| item.name() == wanted)
-            .is_some_and(Cluster::datagrams)
+    pub fn direct(&self) -> Chosen {
+        Chosen {
+            charge: None,
+            told: "direct".to_string(),
+            passage: Passage::Direct(self.instance.mark()),
+        }
+    }
+
+    pub fn renew(&self) {
+        let loaded = match manifest::read(self.source) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                (self.told)(&format!(
+                    "manifest refused, the standing one is kept: {error}"
+                ));
+                return;
+            }
+        };
+        let standing = self.current();
+        let held = match Held::new(loaded, Some(&standing)) {
+            Ok(held) => held,
+            Err(error) => {
+                (self.told)(&format!(
+                    "manifest refused, the standing one is kept: {error}"
+                ));
+                return;
+            }
+        };
+        let count = held.loaded.manifest().table().rules().len();
+        match self.held.write() {
+            Ok(mut slot) => *slot = Arc::new(held),
+            Err(poisoned) => *poisoned.into_inner() = Arc::new(held),
+        }
+        (self.told)(&format!("manifest replaced, {count} rules standing"));
     }
 }
 
-pub fn observed(pools: &Pools, charge: &Charge, verdict: Verdict) {
-    let Some(selector) = pools.get(&charge.cluster) else {
+pub fn observed(warren: &Warren, charge: Option<&Charge>, verdict: Verdict) {
+    let Some(charge) = charge else {
         return;
     };
-    let Ok(mut held) = selector.lock() else {
+    let held = warren.current();
+    let Some(selector) = held.pools.get(&charge.cluster) else {
         return;
     };
-    held.observed(&charge.label, charge.bearing, verdict, Instant::now());
+    let Ok(mut pool) = selector.lock() else {
+        return;
+    };
+    pool.observed(&charge.label, charge.bearing, verdict, Instant::now());
 }
 
 fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
@@ -129,36 +216,9 @@ fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
         .choose(bearing, Instant::now())
 }
 
-pub fn gather(warren: &Warren, started: Instant) -> Result<Pools, Error> {
-    let policy = Policy::new(HALF, FLOOR)?;
-    let mut pools = Pools::new();
-    for cluster in warren.clusters {
-        let selector = Selector::new(cluster, policy, started);
-        pools.insert(cluster.name().clone(), Mutex::new(selector));
-    }
-    Ok(pools)
-}
-
-pub fn stand(warren: &Warren, pools: &Pools, ground: (Ipv4Addr, Duration)) {
-    let Err(error) = warden::attend(warren, pools, ground) else {
+pub fn stand(warren: &Warren, ground: (Ipv4Addr, Duration)) {
+    let Err(error) = warden::attend(warren, ground) else {
         return;
     };
     (warren.told)(&format!("the resolver refused to start: {error}"));
-}
-
-pub fn renew(warren: &Warren) {
-    let held = match super::table::read(warren.table, warren.clusters) {
-        Ok(table) => table,
-        Err(error) => {
-            (warren.told)(&format!("table refused, the standing one is kept: {error}"));
-            return;
-        }
-    };
-    let Ok(mut router) = warren.router.lock() else {
-        (warren.told)("cannot reload the table: the router is poisoned");
-        return;
-    };
-    let count = held.rules().len();
-    router.relay(held);
-    (warren.told)(&format!("table reloaded, {count} rules standing"));
 }

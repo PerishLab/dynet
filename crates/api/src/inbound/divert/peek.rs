@@ -1,7 +1,7 @@
 use super::Divert;
 use crate::inbound::sniff::{self, Refused, Sniffed};
 use crate::inbound::warren::Chosen;
-use dynet_core::{Bearing, Decision, Domain, Ground};
+use dynet_core::{Bearing, Sight, Told};
 use std::net::{IpAddr, SocketAddrV4, TcpStream};
 use std::time::{Duration, Instant};
 
@@ -15,35 +15,22 @@ impl Divert<'_> {
         &self,
         stream: &TcpStream,
         target: SocketAddrV4,
-    ) -> Option<Chosen> {
-        let Some(told) = self.sniffed(stream, target) else {
-            return self.choose(target, Bearing::Stream);
-        };
-        let told = &told;
-        let Some(decision) = self.spoken(target, told) else {
-            return self.choose(target, Bearing::Stream);
-        };
-        if decision.ground() == Ground::Named {
-            self.tally(|served| served.named += 1);
+    ) -> Option<(Chosen, String)> {
+        let sniffed = self.sniffed(stream, target);
+        if let Some(told) = &sniffed {
+            self.recite(target, told);
         }
-        self.warren
-            .passage(self.pools, decision.cluster(), Bearing::Stream)
+        let sight = Sight {
+            told: sniffed.and_then(|told| Told::read(&told.name, told.outer)),
+            address: IpAddr::V4(*target.ip()),
+            bearing: Bearing::Stream,
+        };
+        self.route(target, &sight)
     }
 
-    fn spoken(&self, target: SocketAddrV4, told: &Sniffed) -> Option<Decision> {
-        let domain = Domain::new(&told.name).ok()?;
-        let router = self.warren.router.lock().ok()?;
-        let decision = router.asked(&domain);
-        let issued = router
-            .ledger()
-            .lookup(IpAddr::V4(*target.ip()), Instant::now())
-            .map(|issue| issue.domain().get().to_string());
-        drop(router);
-        self.recite(target, told, issued.as_deref());
-        Some(decision)
-    }
-
-    fn recite(&self, target: SocketAddrV4, told: &Sniffed, issued: Option<&str>) {
+    fn recite(&self, target: SocketAddrV4, told: &Sniffed) {
+        let issued = self.issued(target);
+        let issued = issued.as_deref();
         let borrowed = match told.outer {
             true => ", a provider's public name and not the destination's own",
             false => "",

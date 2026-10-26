@@ -1,5 +1,5 @@
 use dynet_api::outbound::{Exit, Front, Listener, Roster, Speaker, veil};
-use dynet_api::subscription::{self, Entry};
+use dynet_api::{Entry, manifest};
 use dynet_core::{Error, Label};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -13,7 +13,7 @@ const CEILING: usize = 4096;
 #[derive(clap::Args)]
 pub struct Errand {
     #[arg(long)]
-    subscription: PathBuf,
+    manifest: PathBuf,
     #[arg(long)]
     node: String,
     #[arg(long)]
@@ -33,21 +33,16 @@ struct Plan {
 
 #[locus::trace(with = plumb::observation::view())]
 pub fn carry(errand: &Errand) -> Result<ExitCode, Error> {
-    let text = std::fs::read_to_string(&errand.subscription).map_err(|error| {
-        Error::new(format!(
-            "cannot read {}: {error}",
-            errand.subscription.display()
-        ))
-    })?;
-    let entries = subscription::read(&text)?;
+    let loaded = manifest::read(&errand.manifest)?;
+    let entries = loaded.entries();
     let plan = Plan {
         front: Front::read(
-            found(&entries, &errand.node)?,
-            served(&entries, &errand.node)?,
+            found(entries, &errand.node)?,
+            served(entries, &errand.node)?,
             LOOSE,
         )?,
         exit: match &errand.exit {
-            Some(name) => Some(Roster::new(&entries, LOOSE).exit(&Label::new(name.as_str())?)?),
+            Some(name) => Some(Roster::new(entries, LOOSE).exit(&Label::new(name.as_str())?)?),
             None => None,
         },
     };
@@ -61,7 +56,7 @@ fn found<'a>(entries: &'a [Entry], name: &str) -> Result<&'a Entry, Error> {
     entries
         .iter()
         .find(|item| item.field("name") == Some(name))
-        .ok_or_else(|| Error::new(format!("the subscription carries no node named {name}")))
+        .ok_or_else(|| Error::new(format!("the manifest declares no node {name}")))
 }
 
 fn served(entries: &[Entry], name: &str) -> Result<String, Error> {

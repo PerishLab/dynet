@@ -46,7 +46,7 @@ enum Command {
     Carry(carry::Errand),
     Resolve {
         #[arg(long)]
-        subscription: PathBuf,
+        manifest: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long)]
@@ -56,7 +56,7 @@ enum Command {
     },
     Reach {
         #[arg(long)]
-        subscription: PathBuf,
+        manifest: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long, default_value = "8")]
@@ -64,7 +64,7 @@ enum Command {
     },
     Spread {
         #[arg(long)]
-        subscription: PathBuf,
+        manifest: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long, default_value = "16")]
@@ -149,22 +149,22 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand)?),
         Command::Carry(errand) => carry::carry(&errand),
         Command::Resolve {
-            subscription,
+            manifest,
             cluster,
             name,
             count,
-        } => node::probe(&subscription, &cluster, &name, count),
+        } => node::probe(&manifest, &cluster, &name, count),
         Command::Reach {
-            subscription,
+            manifest,
             cluster,
             count,
-        } => node::reach(&subscription, &cluster, count),
+        } => node::reach(&manifest, &cluster, count),
         Command::Spread {
-            subscription,
+            manifest,
             cluster,
             count,
             target,
-        } => node::spread(&subscription, &cluster, &Aim { count, target }),
+        } => node::spread(&manifest, &cluster, &Aim { count, target }),
         Command::Exit {
             seat,
             secret,

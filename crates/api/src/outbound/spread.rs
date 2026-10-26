@@ -1,6 +1,6 @@
 use super::{Endpoint, Front, Tunnel};
-use crate::subscription::Entry;
-use dynet_core::{Bearing, Cluster, Decision, Error, Fault, Label, Policy, Selector, Verdict};
+use crate::manifest::Entry;
+use dynet_core::{Bearing, Cluster, Error, Fault, Label, Name, Policy, Selector, Verdict};
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -26,7 +26,7 @@ pub struct Trial {
 
 #[derive(Clone, Debug)]
 pub struct Run {
-    decision: Decision,
+    cluster: Name,
     trials: Vec<Trial>,
 }
 
@@ -49,8 +49,8 @@ impl Trial {
 }
 
 impl Run {
-    pub fn decision(&self) -> &Decision {
-        &self.decision
+    pub fn cluster(&self) -> &Name {
+        &self.cluster
     }
 
     pub fn trials(&self) -> &[Trial] {
@@ -99,12 +99,7 @@ impl<'a> Roster<'a> {
         }
     }
 
-    pub fn drive(
-        &self,
-        cluster: &Cluster,
-        decision: &Decision,
-        count: usize,
-    ) -> Result<Run, Error> {
+    pub fn drive(&self, cluster: &Cluster, count: usize) -> Result<Run, Error> {
         let policy = Policy::new(HALF, FLOOR)?;
         let selector = Mutex::new(Selector::new(cluster, policy, Instant::now()));
         let trials = Mutex::new(Vec::new());
@@ -118,7 +113,7 @@ impl<'a> Roster<'a> {
             .map_err(|_| Error::new("a trial thread died holding the ledger"))?;
         trials.sort_by(|left, right| left.label().get().cmp(right.label().get()));
         Ok(Run {
-            decision: decision.clone(),
+            cluster: cluster.name().clone(),
             trials,
         })
     }

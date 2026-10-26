@@ -1,10 +1,10 @@
 use super::lasting;
 use super::store::{Key, Recall};
-use super::warren::{self, Chosen, Pools, Warren};
+use super::warren::{self, Chosen, Warren};
 use crate::host::Route;
 use crate::outbound::Listener;
 use crate::resolver::{self, Answer, Packet, QUAD, Query};
-use dynet_core::{Bearing, Decision, Domain, Error, Fault, Ground, Name, Verdict};
+use dynet_core::{Bearing, Domain, Error, Fault, Issue, Name, Verdict, spared};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
@@ -21,18 +21,16 @@ struct Call {
 
 struct Post<'a> {
     warren: &'a Warren<'a>,
-    pools: &'a Pools,
     socket: &'a UdpSocket,
 }
 
-pub fn attend(warren: &Warren, pools: &Pools, ground: (Ipv4Addr, Duration)) -> Result<(), Error> {
+pub fn attend(warren: &Warren, ground: (Ipv4Addr, Duration)) -> Result<(), Error> {
     let (seat, span) = ground;
     let socket = UdpSocket::bind((seat, warren.port))
         .map_err(|error| Error::new(format!("cannot hold the resolver port: {error}")))?;
     let _ = socket.set_read_timeout(Some(REST));
     let post = Post {
         warren,
-        pools,
         socket: &socket,
     };
     let started = Instant::now();
@@ -68,46 +66,44 @@ impl Post<'_> {
             return self.sixth(&asking, call, &query);
         }
         let domain = Domain::new(&query.name)?;
-        let decision = self.decide(&domain)?;
+        let Some(cluster) = self.warren.claimed(&domain) else {
+            let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
+            self.speak(&plain, call)?;
+            return Ok(format!("{} left to the upstream", query.name));
+        };
         let key = Key {
             name: query.name.clone(),
-            cluster: decision.cluster().clone(),
-        };
-        let remembered = match decision.ground() {
-            Ground::Default => Recall::Absent,
-            _ => self.warren.store.recall(&key),
+            cluster: cluster.clone(),
         };
         if let Recall::Known {
             reply,
             aged,
             refresh,
-        } = remembered
+        } = self.warren.store.recall(&key)
         {
             let found = resolver::read(&reply)?;
-            self.assure(&domain, &found, &decision)?;
+            self.assure(&domain, &found, &cluster)?;
             let mark = u16::from_be_bytes([call.asked[0], call.asked[1]]);
             self.speak(&resolver::renew(&reply, mark, aged)?, call)?;
-            return self.after(&key, &domain, &decision, refresh);
+            return self.after(&key, &domain, refresh);
         }
-        if decision.ground() == Ground::Default {
-            let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
-            self.speak(&plain, call)?;
-            return Ok(format!("{} left to the upstream", query.name));
-        }
-        let asking = Packet::new(&call.asked).frame()?;
-        let (label, framed) = self.carry(&asking, decision.cluster())?;
-        let reply = framed
-            .get(2..)
-            .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
-        let found = resolver::read(reply)?;
-        let told = self.keep(&domain, &found, &decision)?;
-        self.remember(&key, reply, &found);
-        self.speak(reply, call)?;
+        let framed = asking.frame()?;
+        let (label, carried) = self.carry(&framed, &cluster)?;
+        let Some(reply) = spare(&carried)? else {
+            self.speak(&asking.failed(&query), call)?;
+            return Ok(format!(
+                "{} through {label} answered reserved addresses alone, which are left out; failed",
+                query.name
+            ));
+        };
+        let found = resolver::read(&reply)?;
+        let told = self.keep(&domain, &found, &cluster)?;
+        self.remember(&key, &reply, &found);
+        self.speak(&reply, call)?;
         Ok(format!(
-            "{} through {label} to cluster {} on ground {:?} gave {told}",
+            "{} through {label} to cluster {} gave {told}",
             query.name,
-            decision.cluster().get(),
-            decision.ground()
+            cluster.get()
         ))
     }
 
@@ -131,21 +127,14 @@ impl Post<'_> {
         let Ok(domain) = Domain::new(name) else {
             return true;
         };
-        self.decide(&domain)
-            .is_ok_and(|decision| decision.ground() != Ground::Default)
+        self.warren.claimed(&domain).is_some()
     }
 
-    fn after(
-        &self,
-        key: &Key,
-        domain: &Domain,
-        decision: &Decision,
-        refresh: bool,
-    ) -> Result<String, Error> {
+    fn after(&self, key: &Key, domain: &Domain, refresh: bool) -> Result<String, Error> {
         if !refresh {
             return Ok(format!("{} from memory", key.name));
         }
-        match self.again(key, domain, decision) {
+        match self.again(key, domain) {
             Ok(label) => Ok(format!(
                 "{} from memory, refreshed through {label}",
                 key.name
@@ -160,29 +149,28 @@ impl Post<'_> {
         }
     }
 
-    fn assure(&self, domain: &Domain, found: &[Answer], decision: &Decision) -> Result<(), Error> {
+    fn assure(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<(), Error> {
         let now = Instant::now();
-        let router = self.warren.router.lock().map_err(|_| poisoned())?;
+        let ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
         let live = found
             .iter()
-            .all(|item| router.holds(IpAddr::V4(item.address), now));
-        drop(router);
+            .all(|item| ledger.lookup(IpAddr::V4(item.address), now).is_some());
+        drop(ledger);
         if live {
             return Ok(());
         }
-        self.keep(domain, found, decision)?;
+        self.keep(domain, found, cluster)?;
         Ok(())
     }
 
-    fn again(&self, key: &Key, domain: &Domain, decision: &Decision) -> Result<String, Error> {
+    fn again(&self, key: &Key, domain: &Domain) -> Result<String, Error> {
         let asking = resolver::ask(&key.name, MARK)?;
-        let (label, framed) = self.carry(&asking, decision.cluster())?;
-        let reply = framed
-            .get(2..)
-            .ok_or_else(|| Error::new("the refreshed answer carried no body"))?;
-        let found = resolver::read(reply)?;
-        self.keep(domain, &found, decision)?;
-        self.remember(key, reply, &found);
+        let (label, framed) = self.carry(&asking, &key.cluster)?;
+        let reply = spare(&framed)?
+            .ok_or_else(|| Error::new("the refreshed answer held reserved addresses alone"))?;
+        let found = resolver::read(&reply)?;
+        self.keep(domain, &found, &key.cluster)?;
+        self.remember(key, &reply, &found);
         Ok(label)
     }
 
@@ -203,27 +191,29 @@ impl Post<'_> {
             .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))
     }
 
-    fn decide(&self, domain: &Domain) -> Result<Decision, Error> {
-        let router = self.warren.router.lock().map_err(|_| poisoned())?;
-        Ok(router.asked(domain))
-    }
-
-    fn keep(&self, domain: &Domain, found: &[Answer], decision: &Decision) -> Result<usize, Error> {
+    fn keep(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<usize, Error> {
         let life = found.iter().map(|item| u64::from(item.life)).max();
         let expiry = Instant::now() + Duration::from_secs(life.unwrap_or_default() + CUSHION);
         let addresses: Vec<IpAddr> = found.iter().map(|item| IpAddr::V4(item.address)).collect();
+        let mut ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
+        let mut held = 0;
+        for address in &addresses {
+            let issue = Issue::new(domain.clone(), cluster.clone(), expiry);
+            if ledger.record(*address, issue) {
+                held += 1;
+            }
+        }
+        drop(ledger);
         for address in &addresses {
             Route::hold(self.warren.instance, &address.to_string());
         }
-        let mut router = self.warren.router.lock().map_err(|_| poisoned())?;
-        router.issued(domain, &addresses, decision, expiry);
-        Ok(addresses.len())
+        Ok(held)
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {
         let mut last = None;
         for _ in 0..TRIES {
-            let Some(chosen) = self.warren.passage(self.pools, wanted, Bearing::Stream) else {
+            let Some(chosen) = self.warren.passage(wanted, Bearing::Stream) else {
                 break;
             };
             let carried = through(&chosen, self.warren.upstream, framed);
@@ -231,7 +221,7 @@ impl Post<'_> {
                 Ok(_) => Verdict::Answered,
                 Err(fault) => Verdict::Faulted(*fault),
             };
-            warren::observed(self.pools, &chosen.charge, verdict);
+            warren::observed(self.warren, chosen.charge.as_ref(), verdict);
             if let Err(fault) = &carried {
                 (self.warren.told)(&format!(
                     "{} did not answer ({fault:?}), asking another node",
@@ -260,6 +250,19 @@ fn through(chosen: &Chosen, upstream: &str, framed: &[u8]) -> Result<Vec<u8>, Fa
     let (mut speaker, mut listener) = chosen.passage.open(upstream, 53)?;
     speaker.send(framed).map_err(|_| Fault::Severed)?;
     gather(&mut listener).map_err(|_| listener.fault().unwrap_or(Fault::Silent))
+}
+
+fn spare(framed: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+    let reply = framed
+        .get(2..)
+        .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
+    let Some(pruned) = resolver::prune(reply, |address| spared(IpAddr::V4(address)))? else {
+        return Ok(Some(reply.to_vec()));
+    };
+    match resolver::read(&pruned)?.is_empty() {
+        true => Ok(None),
+        false => Ok(Some(pruned)),
+    }
 }
 
 fn poisoned() -> Error {

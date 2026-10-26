@@ -1,22 +1,9 @@
-use crate::Cluster;
 use crate::error::Error;
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Spread {
-    Wide,
-    Bound,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Affinity {
     window: Duration,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Pool {
-    cluster: Cluster,
-    affinity: Option<Affinity>,
 }
 
 impl Affinity {
@@ -27,42 +14,22 @@ impl Affinity {
         Ok(Self { window })
     }
 
+    pub fn read(told: &str) -> Result<Self, Error> {
+        let split = told.len().saturating_sub(1);
+        let (count, unit) = told.split_at(split);
+        let count: u64 = count
+            .parse()
+            .map_err(|_| Error::new(format!("{told} is not a window like 30s, 10m or 1h")))?;
+        let seconds = match unit {
+            "s" => count,
+            "m" => count.saturating_mul(60),
+            "h" => count.saturating_mul(3600),
+            _ => return Err(Error::new(format!("{told} carries no unit of s, m or h"))),
+        };
+        Self::new(Duration::from_secs(seconds))
+    }
+
     pub fn window(self) -> Duration {
         self.window
-    }
-}
-
-impl Pool {
-    pub fn wide(cluster: Cluster) -> Self {
-        Self {
-            cluster,
-            affinity: None,
-        }
-    }
-
-    pub fn bound(cluster: Cluster, affinity: Affinity) -> Self {
-        Self {
-            cluster,
-            affinity: Some(affinity),
-        }
-    }
-
-    pub fn cluster(&self) -> &Cluster {
-        &self.cluster
-    }
-
-    pub fn affinity(&self) -> Option<Affinity> {
-        self.affinity
-    }
-
-    pub fn spread(&self) -> Spread {
-        match self.affinity {
-            None => Spread::Wide,
-            Some(_) => Spread::Bound,
-        }
-    }
-
-    pub fn datagrams(&self) -> bool {
-        self.cluster.datagrams()
     }
 }

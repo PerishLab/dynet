@@ -1,9 +1,9 @@
 use super::policy::Policy;
 use super::standing::Standing;
 use super::verdict::Verdict;
-use crate::capability::Bearing;
-use crate::cluster::Cluster;
-use crate::label::Label;
+use crate::Bearing;
+use crate::Cluster;
+use crate::Label;
 use std::collections::BTreeMap;
 use std::time::Instant;
 

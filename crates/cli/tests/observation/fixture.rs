@@ -2,6 +2,8 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+const MANIFEST: &str = r#"{"version": 1, "nodes": [{"label": "private-label", "protocol": "vmess", "server": "private-server.invalid", "port": 443, "uuid": "6f1c2a3b-0000-4000-8000-000000000001", "udp": true}], "clusters": [{"name": "hk", "nodes": ["private-label"]}], "rules": [], "fallback": "direct"}"#;
+
 pub(super) struct Fixture {
     root: tempfile::TempDir,
 }
@@ -12,7 +14,7 @@ impl Fixture {
             root: tempfile::tempdir().unwrap(),
         };
         std::fs::create_dir(fixture.seat()).unwrap();
-        std::fs::write(fixture.root.path().join("subscription"), "proxies:\n  - {name: '🇭🇰 private-label', type: vmess, server: private-server.invalid, port: 443, uuid: private-uuid, udp: true}\n").unwrap();
+        std::fs::write(fixture.root.path().join("manifest"), MANIFEST).unwrap();
         fixture
     }
 
@@ -39,8 +41,8 @@ impl Fixture {
             "resolve" | "reach" | "spread" => {
                 command.args([
                     name,
-                    "--subscription",
-                    "subscription",
+                    "--manifest",
+                    "manifest",
                     "--cluster",
                     "hk",
                     "--count",
@@ -62,16 +64,7 @@ impl Fixture {
                 ]);
             }
             "divert.unit" => {
-                command.args([
-                    "divert",
-                    "--subscription",
-                    "private-subscription",
-                    "--clusters",
-                    "private-clusters",
-                    "--table",
-                    "private-table",
-                    "--unit",
-                ]);
+                command.args(["divert", "--manifest", "private-manifest", "--unit"]);
             }
             _ => panic!("unknown fixture command"),
         }

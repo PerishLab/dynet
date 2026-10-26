@@ -1,6 +1,6 @@
 use super::domain::Domain;
 use super::range::Range;
-use crate::cluster::Name;
+use crate::Name;
 use std::net::IpAddr;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
