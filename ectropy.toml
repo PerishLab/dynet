@@ -12,6 +12,14 @@ syntax = "test"
 paths = ["crates/*/tests/**/*.rs"]
 syntax = "environment"
 
+[[grant]]
+paths = ["crates/tun/src/windows/resource.rs"]
+syntax = "embed"
+
+[[grant]]
+paths = ["crates/tun/src/windows/resource.rs"]
+syntax = "environment"
+
 [limit]
 block = 4
 fanout = 10

@@ -5,13 +5,11 @@ mod usher;
 use super::lasting;
 use super::warren::{Pools, Served, Warren, gather, renew, stand};
 use dynet_core::{Error, Span};
+use dynet_tun::{Device, ROOM};
 pub(super) use roll::Held;
 use roll::Roll;
-use smoltcp::phy::{Device, Medium, RxToken, TunTapInterface, TxToken, wait};
-use smoltcp::time::Instant as Beat;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
-use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
@@ -88,8 +86,9 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
 
 impl Divert<'_> {
     fn pump(&self, span: Duration) -> Result<(), Error> {
-        let mut device = TunTapInterface::new(self.warren.instance.get(), Medium::Ip)
+        let device = Device::open(self.warren.instance.get())
             .map_err(|error| Error::new(format!("cannot open the device: {error}")))?;
+        let mut room = vec![0; ROOM];
         let started = Instant::now();
         let mut swept = Duration::ZERO;
         while lasting(started, span) {
@@ -101,16 +100,16 @@ impl Divert<'_> {
             if self.warren.reload.swap(false, Ordering::Relaxed) {
                 renew(self.warren);
             }
-            let beat =
-                Beat::from_millis(i64::try_from(started.elapsed().as_millis()).unwrap_or_default());
-            let held = device.receive(beat);
-            let Some((taken, sending)) = held else {
-                let _ = wait(device.as_raw_fd(), Some(REST.into()));
+            let held = device
+                .receive(&mut room)
+                .map_err(|error| Error::new(format!("cannot read the device: {error}")))?;
+            let Some(size) = held else {
+                let _ = device.wait(REST);
                 continue;
             };
-            let mut carried = taken.consume(<[u8]>::to_vec);
-            if self.turn(&mut carried) {
-                sending.consume(carried.len(), |room| room.copy_from_slice(&carried));
+            let carried = &mut room[..size];
+            if self.turn(carried) {
+                let _ = device.send(carried);
             }
         }
         self.done.store(true, Ordering::Relaxed);

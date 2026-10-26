@@ -67,6 +67,7 @@ fn staged<T>(
     entries.extend(held.spoken().iter().cloned());
     let router = std::sync::Mutex::new(Router::new(table::read(&errand.table, held.clusters())?));
     let reload = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
         .map_err(|error| Error::new(format!("cannot listen for a reload: {error}")))?;
     let told = |line: &str| println!("  {line}");

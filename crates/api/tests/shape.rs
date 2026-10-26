@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use dynet_api::host::{Shape, read};
 use std::fs;
 use std::os::unix::fs::symlink;

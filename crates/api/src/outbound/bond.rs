@@ -5,6 +5,7 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
 const PULSE: Duration = Duration::from_secs(10);
+#[cfg(unix)]
 const TRIES: u32 = 3;
 
 pub fn reach(seat: SocketAddr, mark: u32, patience: Duration) -> Result<TcpStream, Error> {
@@ -30,10 +31,9 @@ pub fn marked(mark: u32) -> Result<UdpSocket, Error> {
 }
 
 fn rouse(socket: &Socket) -> Result<(), Error> {
-    let alive = TcpKeepalive::new()
-        .with_time(PULSE)
-        .with_interval(PULSE)
-        .with_retries(TRIES);
+    let alive = TcpKeepalive::new().with_time(PULSE).with_interval(PULSE);
+    #[cfg(unix)]
+    let alive = alive.with_retries(TRIES);
     socket.set_tcp_keepalive(&alive).map_err(|error| {
         Error::new(format!(
             "cannot ask a node session to answer for itself: {error}"
@@ -45,9 +45,14 @@ fn stamp(socket: &Socket, mark: u32) -> Result<(), Error> {
     if mark == 0 {
         return Ok(());
     }
-    socket
-        .set_mark(mark)
-        .map_err(|error| Error::new(format!("cannot mark a socket as Dynet's own: {error}")))
+    #[cfg(target_os = "linux")]
+    let made = socket.set_mark(mark);
+    #[cfg(not(target_os = "linux"))]
+    let made = {
+        let _ = socket;
+        Err::<(), _>(std::io::Error::from(ErrorKind::Unsupported))
+    };
+    made.map_err(|error| Error::new(format!("cannot mark a socket as Dynet's own: {error}")))
 }
 
 pub fn ending(kind: ErrorKind) -> Fault {
