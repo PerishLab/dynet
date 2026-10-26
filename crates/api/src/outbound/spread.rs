@@ -1,4 +1,4 @@
-use super::{Endpoint, Tunnel};
+use super::{Endpoint, Front, Tunnel};
 use crate::subscription::Entry;
 use dynet_core::{Bearing, Cluster, Decision, Error, Fault, Label, Policy, Selector, Verdict};
 use std::collections::BTreeSet;
@@ -167,25 +167,19 @@ impl<'a> Roster<'a> {
         label: &Label,
         book: &super::Book,
         upstream: &str,
-    ) -> Result<Endpoint, Error> {
+    ) -> Result<Front, Error> {
         let entry = self.seat(label)?;
         let host = entry
             .field("server")
             .ok_or_else(|| Error::new("no server"))?;
-        Endpoint::new(
-            book.find(host, upstream)?,
-            port(entry)?,
-            entry
-                .field("uuid")
-                .ok_or_else(|| Error::new("no identity"))?,
-            self.mark,
-        )
+        Front::read(entry, book.find(host, upstream)?, self.mark)
     }
 
     pub fn exit(&self, label: &Label) -> Result<super::Exit, Error> {
         let entry = self.seat(label)?;
         let told = entry
             .field("secret")
+            .or_else(|| entry.field("password"))
             .ok_or_else(|| Error::new(format!("node {} carries no key", label.get())))?;
         let drawn =
             super::raw::unbase(told).ok_or_else(|| Error::new("a key is not base sixty four"))?;
@@ -216,20 +210,12 @@ impl<'a> Roster<'a> {
     }
 
     pub fn board(&self, label: &Label) -> Result<Endpoint, Error> {
-        let entry = self
-            .entries
-            .iter()
-            .find(|item| item.field("name") == Some(label.get()))
-            .ok_or_else(|| Error::new(format!("no node named {}", label.get())))?;
-        let port = entry
-            .field("port")
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| Error::new("a node carries no usable port"))?;
+        let entry = self.seat(label)?;
         Endpoint::new(
             entry
                 .field("server")
                 .ok_or_else(|| Error::new("no server"))?,
-            port,
+            port(entry)?,
             entry
                 .field("uuid")
                 .ok_or_else(|| Error::new("no identity"))?,

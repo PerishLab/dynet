@@ -1,151 +1,57 @@
-use super::blame;
-use super::chunk::Chunk;
-use super::kdf;
 use super::shadow::{Cloak, Shroud, veil};
-use super::vmess::{Endpoint, Tunnel};
-use aes_gcm::aead::{Aead, KeyInit, Payload};
-use aes_gcm::{Aes128Gcm, Key, Nonce};
+use super::vless::{self, Reality};
+use super::vmess::{self, Endpoint, Tunnel};
+use crate::subscription::Entry;
 use dynet_core::{Error, Fault};
 use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::time::Duration;
 
-const BORNE: Duration = Duration::from_secs(600);
-
-pub struct Egress {
-    stream: TcpStream,
-    outbound: Chunk,
+pub enum Egress {
+    Vmess(Box<vmess::Egress>),
+    Vless(vless::Egress),
 }
 
-pub struct Ingress {
-    stream: TcpStream,
-    spare: Vec<u8>,
-    inbound: Option<Chunk>,
-    reply: [u8; 16],
-    seed: [u8; 16],
-    verify: u8,
-    fault: Option<Fault>,
+pub enum Ingress {
+    Vmess(Box<vmess::Ingress>),
+    Vless(vless::Ingress),
 }
 
 impl Egress {
-    pub(super) fn new(stream: TcpStream, outbound: Chunk) -> Self {
-        Self { stream, outbound }
-    }
-
-    pub(super) fn greet(&mut self, request: &[u8]) -> Result<(), Error> {
-        self.stream
-            .write_all(request)
-            .map_err(|error| Error::new(format!("cannot greet the node: {error}")))
-    }
-
     pub fn send(&mut self, body: &[u8]) -> Result<(), Error> {
-        self.outbound.send(&mut self.stream, body)
+        match self {
+            Self::Vmess(egress) => egress.send(body),
+            Self::Vless(egress) => egress.send(body),
+        }
     }
 
-    pub fn done(&self) -> Result<(), Error> {
-        self.stream
-            .shutdown(std::net::Shutdown::Write)
-            .map_err(|error| Error::new(format!("cannot close the node session: {error}")))
+    pub fn done(&mut self) -> Result<(), Error> {
+        match self {
+            Self::Vmess(egress) => egress.done(),
+            Self::Vless(egress) => egress.done(),
+        }
     }
 }
 
 impl Ingress {
-    pub(super) fn new(stream: TcpStream, reply: [u8; 16], seed: [u8; 16], verify: u8) -> Self {
-        Self {
-            stream,
-            spare: Vec::new(),
-            inbound: None,
-            reply,
-            seed,
-            verify,
-            fault: None,
+    pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
+        match self {
+            Self::Vmess(ingress) => ingress.receive(),
+            Self::Vless(ingress) => ingress.receive(),
         }
     }
 
     pub fn fault(&self) -> Option<Fault> {
-        self.fault
-    }
-
-    pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        if self.inbound.is_none() {
-            self.accept()?;
+        match self {
+            Self::Vmess(ingress) => ingress.fault(),
+            Self::Vless(ingress) => ingress.fault(),
         }
-        let Some(inbound) = self.inbound.as_mut() else {
-            return Ok(None);
-        };
-        inbound.receive(&mut self.stream)
     }
-
-    fn accept(&mut self) -> Result<(), Error> {
-        let outcome = self.settle();
-        if outcome.is_err() && self.fault.is_none() {
-            self.fault = Some(Fault::Handshake);
-        }
-        outcome
-    }
-
-    fn settle(&mut self) -> Result<(), Error> {
-        let key = shorten(&kdf::digest(&self.reply));
-        let seed = shorten(&kdf::digest(&self.seed));
-        let length = unseal(
-            &kdf::shorten(&key, &[b"AEAD Resp Header Len Key"]),
-            &kdf::derive(&seed, &[b"AEAD Resp Header Len IV"]),
-            &self.read(18)?,
-        )?;
-        let size = usize::from(u16::from_be_bytes([length[0], length[1]]));
-        let header = unseal(
-            &kdf::shorten(&key, &[b"AEAD Resp Header Key"]),
-            &kdf::derive(&seed, &[b"AEAD Resp Header IV"]),
-            &self.read(size + 16)?,
-        )?;
-        if header.first() != Some(&self.verify) {
-            return Err(Error::new(
-                "the node answered with the wrong session marker; the handshake was not accepted",
-            ));
-        }
-        self.inbound = Some(Chunk::new(&key, seed));
-        let _ = self.stream.set_read_timeout(Some(BORNE));
-        Ok(())
-    }
-
-    fn read(&mut self, size: usize) -> Result<Vec<u8>, Error> {
-        let mut buffer = vec![0u8; size];
-        let stream = &mut self.stream;
-        let outcome = stream.read_exact(&mut buffer);
-        if let Err(error) = outcome {
-            self.fault = Some(blame::ending(error.kind()));
-            return Err(Error::new(format!(
-                "the node closed before answering: {error}"
-            )));
-        }
-        Ok(buffer)
-    }
-}
-
-fn shorten(value: &[u8; 32]) -> [u8; 16] {
-    let mut short = [0u8; 16];
-    short.copy_from_slice(&value[..16]);
-    short
-}
-
-fn unseal(key: &[u8; 16], seed: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, Error> {
-    let cipher = Aes128Gcm::new(Key::<Aes128Gcm>::from_slice(key));
-    cipher
-        .decrypt(
-            Nonce::from_slice(&seed[..12]),
-            Payload {
-                msg: sealed,
-                aad: b"",
-            },
-        )
-        .map_err(|_| Error::new("the node's answer did not open"))
 }
 
 impl Write for Egress {
     fn write(&mut self, body: &[u8]) -> std::io::Result<usize> {
-        match self.send(body) {
-            Ok(()) => Ok(body.len()),
-            Err(error) => Err(std::io::Error::other(error.to_string())),
+        match self {
+            Self::Vmess(egress) => egress.write(body),
+            Self::Vless(egress) => egress.write(body),
         }
     }
 
@@ -156,19 +62,10 @@ impl Write for Egress {
 
 impl Read for Ingress {
     fn read(&mut self, room: &mut [u8]) -> std::io::Result<usize> {
-        while self.spare.is_empty() {
-            let taken = self
-                .receive()
-                .map_err(|error| std::io::Error::other(error.to_string()));
-            match taken? {
-                None => return Ok(0),
-                Some(part) => self.spare = part,
-            }
+        match self {
+            Self::Vmess(ingress) => ingress.read(room),
+            Self::Vless(ingress) => ingress.read(room),
         }
-        let size = room.len().min(self.spare.len());
-        room[..size].copy_from_slice(&self.spare[..size]);
-        self.spare.drain(..size);
-        Ok(size)
     }
 }
 
@@ -190,7 +87,7 @@ impl Speaker {
         }
     }
 
-    pub fn done(&self) -> Result<(), Error> {
+    pub fn done(&mut self) -> Result<(), Error> {
         match self {
             Self::Plain(egress) | Self::Veiled(egress, _) => egress.done(),
         }
@@ -218,25 +115,94 @@ pub struct Exit {
     pub secret: [u8; 16],
 }
 
+pub enum Front {
+    Vmess(Endpoint),
+    Vless(Reality),
+}
+
+impl Front {
+    pub fn read(entry: &Entry, placed: String, mark: u32) -> Result<Self, Error> {
+        if entry.field("type") == Some("vless") {
+            return Ok(Self::Vless(Reality::read(entry, &placed, mark)?));
+        }
+        let port = entry
+            .field("port")
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| Error::new("a node carries no usable port"))?;
+        let uuid = entry
+            .field("uuid")
+            .ok_or_else(|| Error::new("no identity"))?;
+        Ok(Self::Vmess(Endpoint::new(placed, port, uuid, mark)?))
+    }
+
+    pub fn dial(&self, host: &str, port: u16) -> Result<(Egress, Ingress), Error> {
+        match self {
+            Self::Vmess(endpoint) => {
+                let mut tunnel = Tunnel::dial(endpoint)?;
+                tunnel.board(endpoint, host, port)?;
+                let (egress, ingress) = tunnel.split();
+                Ok((
+                    Egress::Vmess(Box::new(egress)),
+                    Ingress::Vmess(Box::new(ingress)),
+                ))
+            }
+            Self::Vless(reality) => {
+                let (egress, ingress) = reality.open(reality.connect()?, host, port)?;
+                Ok((Egress::Vless(egress), Ingress::Vless(ingress)))
+            }
+        }
+    }
+
+    pub fn board(&self, host: &str, port: u16) -> Result<(Egress, Ingress), Fault> {
+        match self {
+            Self::Vmess(endpoint) => {
+                let mut tunnel = Tunnel::dial(endpoint).map_err(|_| Fault::Reach)?;
+                tunnel
+                    .board(endpoint, host, port)
+                    .map_err(|_| Fault::Handshake)?;
+                let (egress, ingress) = tunnel.split();
+                Ok((
+                    Egress::Vmess(Box::new(egress)),
+                    Ingress::Vmess(Box::new(ingress)),
+                ))
+            }
+            Self::Vless(reality) => {
+                let stream = reality.connect().map_err(|_| Fault::Reach)?;
+                let (egress, ingress) = reality
+                    .open(stream, host, port)
+                    .map_err(|_| Fault::Handshake)?;
+                Ok((Egress::Vless(egress), Ingress::Vless(ingress)))
+            }
+        }
+    }
+
+    pub fn bearing(&self) -> bool {
+        matches!(self, Self::Vmess(_))
+    }
+}
+
 pub enum Passage {
-    Plain(Endpoint),
-    Veiled(Endpoint, Exit),
+    Plain(Front),
+    Veiled(Front, Exit),
 }
 
 impl Passage {
     pub fn open(&self, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {
         match self {
-            Self::Plain(endpoint) => plain(endpoint, host, port),
-            Self::Veiled(first, exit) => veiled(first, exit, (host, port)),
+            Self::Plain(front) => {
+                let (egress, ingress) = front.board(host, port)?;
+                Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
+            }
+            Self::Veiled(front, exit) => veiled(front, exit, (host, port)),
         }
     }
 
     pub fn bearing(&self) -> bool {
-        matches!(self, Self::Plain(_))
+        matches!(self, Self::Plain(front) if front.bearing())
     }
 
     pub fn bear(&self, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {
-        let Self::Plain(endpoint) = self else {
+        let Self::Plain(Front::Vmess(endpoint)) = self else {
             return Err(Fault::Handshake);
         };
         let mut tunnel = Tunnel::dial(endpoint).map_err(|_| Fault::Reach)?;
@@ -244,25 +210,15 @@ impl Passage {
             .bear(endpoint, host, port)
             .map_err(|_| Fault::Handshake)?;
         let (egress, ingress) = tunnel.split();
-        Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
+        Ok((
+            Speaker::Plain(Egress::Vmess(Box::new(egress))),
+            Listener::Plain(Ingress::Vmess(Box::new(ingress))),
+        ))
     }
 }
 
-fn plain(endpoint: &Endpoint, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {
-    let mut tunnel = Tunnel::dial(endpoint).map_err(|_| Fault::Reach)?;
-    tunnel
-        .board(endpoint, host, port)
-        .map_err(|_| Fault::Handshake)?;
-    let (egress, ingress) = tunnel.split();
-    Ok((Speaker::Plain(egress), Listener::Plain(ingress)))
-}
-
-fn veiled(first: &Endpoint, exit: &Exit, seat: (&str, u16)) -> Result<(Speaker, Listener), Fault> {
-    let mut tunnel = Tunnel::dial(first).map_err(|_| Fault::Reach)?;
-    tunnel
-        .board(first, &exit.host, exit.port)
-        .map_err(|_| Fault::Handshake)?;
-    let (mut egress, ingress) = tunnel.split();
+fn veiled(front: &Front, exit: &Exit, seat: (&str, u16)) -> Result<(Speaker, Listener), Fault> {
+    let (mut egress, ingress) = front.board(&exit.host, exit.port)?;
     let (mut cloak, shroud) = veil(exit.secret).map_err(|_| Fault::Handshake)?;
     cloak
         .greet(&mut egress, seat, &[])

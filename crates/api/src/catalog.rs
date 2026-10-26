@@ -3,6 +3,7 @@ use dynet_core::{Capability, Carriage, Cluster, Error, Label, Name, Node};
 use std::collections::BTreeMap;
 
 const CARRIED: &str = "vmess";
+const FRONTED: &str = "vless";
 const SPOKEN: &str = "shadow";
 const FIRST: u32 = 0x1F1E6;
 const LAST: u32 = 0x1F1FF;
@@ -217,7 +218,7 @@ fn sort(entry: &Entry, label: &Label, seen: &[Label]) -> Result<String, Reason> 
     if entry.field("server").is_none() || entry.field("port").is_none() {
         return Err(Reason::Grouped);
     }
-    if entry.field("type") != Some(CARRIED) {
+    if ![Some(CARRIED), Some(FRONTED)].contains(&entry.field("type")) {
         return Err(Reason::Protocol);
     }
     let Some(place) = place(label.get()) else {

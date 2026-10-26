@@ -44,7 +44,18 @@ fn entry(body: &str) -> Result<Entry, Error> {
         let Some((name, value)) = item.split_once(':') else {
             continue;
         };
-        fields.insert(name.trim().to_string(), unquote(value.trim()));
+        let name = name.trim();
+        let value = value.trim();
+        let Some(inner) = value
+            .strip_prefix('{')
+            .and_then(|rest| rest.strip_suffix('}'))
+        else {
+            fields.insert(name.to_string(), unquote(value));
+            continue;
+        };
+        for (key, held) in entry(inner)?.fields {
+            fields.insert(format!("{name}.{key}"), held);
+        }
     }
     Ok(Entry { fields })
 }
@@ -55,16 +66,11 @@ fn split(body: &str) -> Result<Vec<String>, Error> {
     let mut listed = 0usize;
     for character in body.chars() {
         match character {
-            '{' => {
-                return Err(Error::new(
-                    "a proxy entry carried a nested mapping this reader does not understand",
-                ));
-            }
-            '[' => {
+            '[' | '{' => {
                 listed += 1;
                 current.push(character);
             }
-            ']' => {
+            ']' | '}' => {
                 listed = listed.saturating_sub(1);
                 current.push(character);
             }
@@ -73,7 +79,9 @@ fn split(body: &str) -> Result<Vec<String>, Error> {
         }
     }
     if listed != 0 {
-        return Err(Error::new("a proxy entry carried an unclosed list"));
+        return Err(Error::new(
+            "a proxy entry carried an unclosed list or mapping",
+        ));
     }
     items.push(current);
     Ok(items)

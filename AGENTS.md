@@ -38,6 +38,34 @@ are.
   datagrams wrapped in the node's own stream, which is what this repository
   speaks, and `Absent` is a protocol reached by stream alone. `Native` and
   `Associate` keep their meaning and have no producer yet.
+- A `Front` is the node a stream boards first, and it speaks either VMess or
+  VLESS over REALITY. An exit is reached through any front, because what the
+  exit sees is a stream and not the protocol that carried it there. A VLESS
+  front bears streams alone until datagrams are spoken over it, so its
+  `Carriage` is `Absent` whatever the vendor flag claims.
+- A REALITY front is accepted only when the server proves it holds the key the
+  node was declared with: the session id carries the client's seal over the
+  whole hello, and the certificate that comes back must be the server's own
+  HMAC over its Ed25519 key under the shared secret, signed for and finished
+  under it. A server that answers with any other certificate is relaying the
+  handshake target, so the session is refused and never used to carry
+  anything. The hello is shaped like a current Chrome: GREASE, shuffled
+  extensions, and a hybrid ML-KEM and X25519 share beside a plain X25519 share
+  drawn from the same X25519 key, so whichever share the server picks seals
+  the same secret.
+- The only flow spoken is `xtls-rprx-vision`, and it follows Xray's framing
+  exactly: the first packets travel padded under the node's identity, and once
+  the carried session is TLS 1.3 both directions switch to copying the inner
+  records raw beside the outer session rather than sealing them twice. A
+  record the server sends with no content is padding and is skipped.
+- `dynet carry` dials one node, optionally through one exit, and either fetches
+  the egress address or relays one local connection to a target; it is the
+  probe a front is checked with on a host, because the workstation's own
+  tunnel client rewrites destinations by name and a check made through it
+  reaches the handshake target instead of the node.
+- A subscription entry may nest one mapping, such as `reality-opts`, and its
+  keys are read as dotted names (`reality-opts.public-key`).
+
 - `Bearing` is what a piece of traffic needs, `Stream` or `Datagram`. A cluster
   carries datagrams when any of its nodes does, and datagram selection chooses
   only within those, so one node that cannot carry them costs that node and not

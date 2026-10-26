@@ -1,6 +1,7 @@
-use dynet_core::Error;
+use dynet_core::{Error, Fault};
 use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::io::ErrorKind;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
 const PULSE: Duration = Duration::from_secs(10);
@@ -47,4 +48,23 @@ fn stamp(socket: &Socket, mark: u32) -> Result<(), Error> {
     socket
         .set_mark(mark)
         .map_err(|error| Error::new(format!("cannot mark a socket as Dynet's own: {error}")))
+}
+
+pub fn ending(kind: ErrorKind) -> Fault {
+    match kind {
+        ErrorKind::TimedOut | ErrorKind::WouldBlock => Fault::Silent,
+        _ => Fault::Severed,
+    }
+}
+
+pub(super) fn place(host: &str, port: u16) -> Result<SocketAddr, Error> {
+    let named = format!("{host}:{port}");
+    if let Ok(seat) = named.parse() {
+        return Ok(seat);
+    }
+    named
+        .to_socket_addrs()
+        .map_err(|error| Error::new(format!("cannot place the node: {error}")))?
+        .next()
+        .ok_or_else(|| Error::new(format!("{host} names no address")))
 }

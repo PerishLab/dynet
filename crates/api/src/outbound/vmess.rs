@@ -1,16 +1,20 @@
-use super::chunk::Chunk;
-use super::kdf;
-use super::parts::{Egress, Ingress};
-use super::raw::{checksum, parse, random};
+mod chunk;
+mod half;
+mod kdf;
+
+use super::bond::place;
+use super::raw::{addressed, checksum, parse, random};
 use aes::Aes128;
 use aes::cipher::BlockEncrypt;
 use aes::cipher::KeyInit as Block;
 use aes::cipher::generic_array::GenericArray;
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, Key, Nonce};
+use chunk::Chunk;
 use dynet_core::{Error, Fault};
+pub use half::{Egress, Ingress};
 use md5::{Digest as Legacy, Md5};
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SALT: &[u8] = b"c48619fe-8f02-49e0-b9e9-edf763e17e21";
@@ -48,15 +52,7 @@ impl Endpoint {
     }
 
     fn seat(&self) -> Result<SocketAddr, Error> {
-        let named = format!("{}:{}", self.host, self.port);
-        if let Ok(seat) = named.parse() {
-            return Ok(seat);
-        }
-        named
-            .to_socket_addrs()
-            .map_err(|error| Error::new(format!("cannot place the node: {error}")))?
-            .next()
-            .ok_or_else(|| Error::new(format!("{} names no address", self.host)))
+        place(&self.host, self.port)
     }
 
     fn command(&self) -> [u8; 16] {
@@ -157,18 +153,6 @@ impl Tunnel {
         request.extend_from_slice(&nonce);
         request.extend_from_slice(&conceal(&command, &auth, &nonce, header)?);
         self.egress.greet(&request)
-    }
-}
-
-fn addressed(host: &str) -> Vec<u8> {
-    match host.parse() {
-        Ok(IpAddr::V4(plain)) => [vec![1u8], plain.octets().to_vec()].concat(),
-        Ok(IpAddr::V6(plain)) => [vec![3u8], plain.octets().to_vec()].concat(),
-        Err(_) => [
-            vec![2u8, u8::try_from(host.len()).unwrap_or_default()],
-            host.as_bytes().to_vec(),
-        ]
-        .concat(),
     }
 }
 
