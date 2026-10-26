@@ -78,9 +78,14 @@ fn declared() {
 
 #[test]
 fn nesting() {
-    let nested = "  - {name: 'x', type: vmess, ws-opts: {path: /a}}\n";
-    let error = subscription::read(nested).expect_err("a nested mapping must refuse");
-    assert!(error.to_string().contains("nested mapping"), "{error}");
+    let nested = "  - {name: 'x', type: vless, reality-opts: {public-key: k, short-id: 'ab'}}\n";
+    let entries = subscription::read(nested).expect("a nested mapping reads");
+    assert_eq!(entries[0].field("reality-opts.public-key"), Some("k"));
+    assert_eq!(entries[0].field("reality-opts.short-id"), Some("ab"));
+    assert_eq!(entries[0].field("type"), Some("vless"));
+    let open = "  - {name: 'x', reality-opts: {public-key: k}\n";
+    let error = subscription::read(open).expect_err("an unclosed mapping must refuse");
+    assert!(error.to_string().contains("unclosed"), "{error}");
 }
 
 #[test]
@@ -228,5 +233,19 @@ fn borne() {
         carriage("other"),
         Carriage::Absent,
         "a vendor flag on a protocol Dynet does not speak claims nothing"
+    );
+}
+
+#[test]
+fn fronted() {
+    let text = "  - {name: '\u{1F1FA}\u{1F1F8} edge', type: vless, server: a.invalid, port: 443, uuid: x, udp: true, flow: xtls-rprx-vision, reality-opts: {public-key: k, short-id: ab}}\n";
+    let entries = subscription::read(text).expect("entries");
+    let held = catalog::build(&entries).expect("catalog");
+    assert!(held.declined().is_empty());
+    let carriage = held.clusters()[0].nodes()[0].capability().carriage();
+    assert_eq!(
+        carriage,
+        Carriage::Absent,
+        "a REALITY node bears streams alone until datagrams are spoken over it"
     );
 }

@@ -1,6 +1,6 @@
 use dynet_core::Error;
-use std::fs::File;
-use std::io::Read;
+use rand_core::{OsRng, RngCore};
+use std::net::IpAddr;
 
 pub fn checksum(value: &[u8]) -> [u8; 4] {
     let mut state = 0xffff_ffffu32;
@@ -19,8 +19,8 @@ pub fn checksum(value: &[u8]) -> [u8; 4] {
 
 pub(super) fn random(size: usize) -> Result<Vec<u8>, Error> {
     let mut buffer = vec![0u8; size];
-    File::open("/dev/urandom")
-        .and_then(|mut source| source.read_exact(&mut buffer))
+    OsRng
+        .try_fill_bytes(&mut buffer)
         .map_err(|error| Error::new(format!("cannot draw randomness: {error}")))?;
     Ok(buffer)
 }
@@ -42,11 +42,16 @@ pub fn parse(uuid: &str) -> Result<[u8; 16], Error> {
 
 pub fn unbase(text: &str) -> Option<Vec<u8>> {
     const CODE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const SAFE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut held = 0u32;
     let mut bits = 0u32;
     let mut out = Vec::new();
     for byte in text.bytes().filter(|item| *item != b'=') {
-        let place = u32::try_from(CODE.iter().position(|item| *item == byte)?).ok()?;
+        let found = CODE
+            .iter()
+            .position(|item| *item == byte)
+            .or_else(|| SAFE.iter().position(|item| *item == byte))?;
+        let place = u32::try_from(found).ok()?;
         held = (held << 6) | place;
         bits += 6;
         if bits < 8 {
@@ -56,4 +61,16 @@ pub fn unbase(text: &str) -> Option<Vec<u8>> {
         out.push(u8::try_from((held >> bits) & 0xff).ok()?);
     }
     Some(out)
+}
+
+pub(super) fn addressed(host: &str) -> Vec<u8> {
+    match host.parse() {
+        Ok(IpAddr::V4(plain)) => [vec![1u8], plain.octets().to_vec()].concat(),
+        Ok(IpAddr::V6(plain)) => [vec![3u8], plain.octets().to_vec()].concat(),
+        Err(_) => [
+            vec![2u8, u8::try_from(host.len()).unwrap_or_default()],
+            host.as_bytes().to_vec(),
+        ]
+        .concat(),
+    }
 }
