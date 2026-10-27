@@ -13,7 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 dynet-core.workspace = true
-dynet-tun.workspace = true
+dynet-host.workspace = true
 aes.workspace = true
 blake3.workspace = true
 aes-gcm.workspace = true
@@ -28,9 +28,6 @@ x25519-dalek.workspace = true
 smoltcp.workspace = true
 socket2.workspace = true
 toml.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-dynet-windows.workspace = true
 
 [dev-dependencies]
 dynet-core.workspace = true

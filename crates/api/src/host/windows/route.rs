@@ -1,5 +1,5 @@
 use dynet_core::{Error, Instance, Range, Span};
-use dynet_windows::{Interface, Prefix, Wall};
+use dynet_host::windows::{Interface, Prefix, Wall};
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 

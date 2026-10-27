@@ -1,6 +1,6 @@
 [package]
-name = "dynet-windows"
-description = "The Windows host mechanisms Dynet stands on around its packet device."
+name = "dynet-host"
+description = "Native host mechanisms and packet devices for Dynet."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,8 +8,14 @@ repository.workspace = true
 publish = false
 
 [lib]
-name = "dynet_windows"
+name = "dynet_host"
 path = "src/lib.rs"
+
+[dependencies]
+socket2.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 sha2.workspace = true

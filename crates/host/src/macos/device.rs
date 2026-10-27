@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use super::interface::{index, name};
 use std::fs::File;
 use std::io::{Error, ErrorKind, IoSlice, Read, Result, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -10,28 +10,13 @@ const MTU: libc::c_ulong = 0xc0000000
     | ((b'i' as libc::c_ulong) << 8)
     | 51;
 
-pub fn name(instance: &str) -> String {
-    let hash = instance.bytes().fold(2166136261u32, |held, byte| {
-        (held ^ u32::from(byte)).wrapping_mul(16777619)
-    });
-    format!("utun{}", 100 + hash % 30000)
-}
-
-pub fn index(name: &str) -> Result<u32> {
-    let name = CString::new(name).map_err(|_| Error::other("an interface name contains zero"))?;
-    match unsafe { libc::if_nametoindex(name.as_ptr()) } {
-        0 => Err(Error::last_os_error()),
-        index => Ok(index),
-    }
-}
-
-pub(super) struct Device {
+pub(crate) struct Device {
     file: File,
     name: String,
 }
 
 impl Device {
-    pub(super) fn open(instance: &str) -> Result<Self> {
+    pub(crate) fn open(instance: &str) -> Result<Self> {
         let bytes = instance.as_bytes();
         if bytes.is_empty() || bytes.len() >= libc::IFNAMSIZ || bytes.contains(&0) {
             return Err(Error::new(
@@ -95,15 +80,15 @@ impl Device {
         Ok(Self { file, name })
     }
 
-    pub(super) fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
-    pub(super) fn index(&self) -> Result<u32> {
+    pub(crate) fn index(&self) -> Result<u32> {
         index(&self.name)
     }
 
-    pub(super) fn mtu(&self) -> Result<u32> {
+    pub(crate) fn mtu(&self) -> Result<u32> {
         let socket = socket(libc::AF_INET, 0)?;
         let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
         for (slot, byte) in request.ifr_name.iter_mut().zip(self.name.as_bytes()) {
@@ -116,8 +101,8 @@ impl Device {
             .map_err(|_| Error::other("the interface returned a negative MTU"))
     }
 
-    pub(super) fn receive(&self, room: &mut [u8]) -> Result<Option<usize>> {
-        let mut framed = [0u8; super::ROOM + 4];
+    pub(crate) fn receive(&self, room: &mut [u8]) -> Result<Option<usize>> {
+        let mut framed = [0u8; crate::ROOM + 4];
         let size = match (&self.file).read(&mut framed) {
             Ok(size) => size,
             Err(error) if error.kind() == ErrorKind::WouldBlock => return Ok(None),
@@ -130,7 +115,7 @@ impl Device {
         Ok(Some(size - 4))
     }
 
-    pub(super) fn send(&self, packet: &[u8]) -> Result<()> {
+    pub(crate) fn send(&self, packet: &[u8]) -> Result<()> {
         let family = match packet.first().map(|byte| byte >> 4) {
             Some(4) => libc::AF_INET,
             Some(6) => libc::AF_INET6,
@@ -144,7 +129,7 @@ impl Device {
         }
     }
 
-    pub(super) fn wait(&self, span: Duration) -> Result<()> {
+    pub(crate) fn wait(&self, span: Duration) -> Result<()> {
         let mut watch = libc::pollfd {
             fd: self.file.as_raw_fd(),
             events: libc::POLLIN,

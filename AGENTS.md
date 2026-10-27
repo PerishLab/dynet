@@ -20,15 +20,14 @@ are.
 - `crates/lib` owns the shared semantic kernel and contracts as `dynet-core`.
 - `crates/api` owns the reusable API surface.
 - `crates/cli` owns command grammar and user-facing output.
-- `crates/tun` owns the packet device on each platform as `dynet-tun`: open
-  a device by name, read its identity and MTU, read and write one IP packet,
-  wait. Linux opens `/dev/net/tun`; Windows binds Wintun by hand. It is the
-  crate that owns unsafe packet-device calls.
-- `crates/windows` owns the unsafe Windows host calls as `dynet-windows`:
-  IP Helper, socket interface binding, WFP and SCM. `api`'s host layer owns
-  their product policy and NRPT integration.
-- Dependency direction is `cli -> api -> lib`, `api -> tun`, and the Windows
-  host and CLI service dispatcher depend on `windows`.
+- `crates/host` owns native packet devices, interface/socket binding and Windows
+  IP Helper, WFP, known-folder and SCM mechanisms as `dynet-host`. Linux,
+  macOS and Windows implementations live inside this crate, which owns unsafe
+  host calls. API retains routing, DNS, ledger and capture policy; CLI retains
+  service orchestration.
+- Dependency direction is `cli -> api -> lib`, `api -> host`, and the Windows
+  CLI service dispatcher also depends on `host`. Host depends on neither
+  product policy nor command orchestration.
 - Keep the API independent of CLI presentation concerns.
 - Add product vocabulary only when its behavior and ownership have been
   explicitly settled.
@@ -314,14 +313,14 @@ are.
 
 ## Wintun
 
-`crates/tun/resources/wintun.dll` is the amd64 binary from the official
+`crates/host/resources/wintun.dll` is the amd64 binary from the official
 Wintun 0.14.1 release at `https://www.wintun.net/builds/wintun-0.14.1.zip`
 (archive SHA256
 `07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51`, the DLL
 signed by WireGuard LLC), DLL SHA256 `e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce`,
 carried beside its `LICENSE.txt`. The license allows redistribution alongside
-software that uses it only through `wintun.h`, which is all `crates/tun` does.
-The digest is pinned in `crates/tun/src/windows/resource.rs`; the binary is
+software that uses it only through `wintun.h`, which is all `crates/host` does.
+The digest is pinned in `crates/host/src/windows/device/resource.rs`; the binary is
 embedded at compile time and written beside `dynet.exe` only after it matches,
 then loaded from there. Nothing is fetched at build or run time. Replacing it
 means replacing both files and the pin together.

@@ -1,21 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(windows)]
-mod windows;
-
-#[cfg(target_os = "linux")]
-use linux as native;
-#[cfg(target_os = "macos")]
-use macos as native;
-#[cfg(target_os = "macos")]
-pub use macos::{index, name};
-#[cfg(windows)]
-use windows as native;
-
+use super::native;
 use std::io::Result;
 use std::time::Duration;
 

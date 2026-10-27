@@ -11,7 +11,7 @@ pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Erro
     let state = stage.state.clone();
     let (port, span) = (stage.port, stage.span);
     let name = instance.get().to_string();
-    dynet_windows::serve(&name, move || {
+    dynet_host::windows::serve(&name, move || {
         let stage = Stage {
             errand: &errand,
             state: &state,
@@ -64,7 +64,7 @@ fn work(instance: &Instance, stage: &Stage) -> u32 {
         told(&format!("refused to raise: {error}"));
         return 1;
     }
-    let carried = watch::carried(instance, stage, (dynet_windows::halted(), &told));
+    let carried = watch::carried(instance, stage, (dynet_host::windows::halted(), &told));
     let code = match &carried {
         Ok(_) => 0,
         Err(error) => {
@@ -74,7 +74,7 @@ fn work(instance: &Instance, stage: &Stage) -> u32 {
             1
         }
     };
-    if carried.is_ok() && !dynet_windows::closing() {
+    if carried.is_ok() && !dynet_host::windows::closing() {
         match host::reclaim(instance) {
             Ok(cleared) => told(&format!("stopped and lowered: veil={}", cleared.veil)),
             Err(error) => told(&format!("stopped but not lowered: {error}")),

@@ -2,7 +2,7 @@ use dynet_core::Error;
 use std::path::PathBuf;
 
 pub fn kept() -> Result<PathBuf, Error> {
-    dynet_windows::data()
+    dynet_host::windows::data()
         .map(|root| root.join("dynet"))
         .map_err(|error| Error::new(format!("cannot place local state: {error}")))
 }
