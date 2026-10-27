@@ -16,7 +16,7 @@ pub struct Link;
 
 impl Link {
     pub fn present(instance: &Instance) -> bool {
-        dynet_tun::index(&dynet_tun::name(instance.get())).is_ok()
+        dynet_host::macos::index(&dynet_host::macos::name(instance.get())).is_ok()
     }
 
     pub fn dress(instance: &Instance, span: Span) -> Result<(), Error> {
@@ -45,7 +45,7 @@ impl Link {
                 Fragment::new(&path, &seat).write()?;
             }
         }
-        let name = dynet_tun::name(instance.get());
+        let name = dynet_host::macos::name(instance.get());
         let spare = span.spare().to_string();
         run(
             "/sbin/ifconfig",
@@ -145,7 +145,7 @@ impl Route {
     }
 
     fn shown(instance: &Instance) -> Result<BTreeSet<Range>, Error> {
-        let name = dynet_tun::name(instance.get());
+        let name = dynet_host::macos::name(instance.get());
         let text = run("/usr/sbin/netstat", &["-rn", "-f", "inet"])?;
         let mut found = BTreeSet::new();
         for line in text.lines() {
@@ -163,7 +163,7 @@ impl Route {
 }
 
 fn change(instance: &Instance, range: Range, verb: &str) -> Result<(), Error> {
-    let name = dynet_tun::name(instance.get());
+    let name = dynet_host::macos::name(instance.get());
     let prefix = format!("{}/{}", range.base(), range.prefix());
     run(
         "/sbin/route",

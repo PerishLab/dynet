@@ -1,6 +1,6 @@
 use super::super::run;
 use dynet_core::{Error, Instance};
-use dynet_windows::Wall;
+use dynet_host::windows::Wall;
 use std::net::Ipv4Addr;
 
 pub struct Veil;

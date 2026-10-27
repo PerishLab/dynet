@@ -1,7 +1,7 @@
 use crate::host::Link;
 use crate::inbound::warren::Warren;
 use dynet_core::{Error, Span};
-use dynet_tun::Device;
+use dynet_host::Device;
 use std::net::{TcpListener, UdpSocket};
 use std::time::{Duration, Instant};
 

@@ -42,29 +42,8 @@ fn rouse(socket: &Socket) -> Result<(), Error> {
 }
 
 fn stamp(socket: &Socket, mark: u32, six: bool) -> Result<(), Error> {
-    if mark == 0 {
-        return Ok(());
-    }
-    #[cfg(target_os = "linux")]
-    let _ = six;
-    #[cfg(target_os = "linux")]
-    let made = socket.set_mark(mark);
-    #[cfg(windows)]
-    let made = dynet_windows::uplink().and_then(|index| {
-        use std::os::windows::io::AsRawSocket;
-        dynet_windows::unicast(socket.as_raw_socket(), index, six)
-    });
-    #[cfg(target_os = "macos")]
-    let made = crate::host::macos::uplink().and_then(|index| match six {
-        true => socket.bind_device_by_index_v6(Some(index)),
-        false => socket.bind_device_by_index_v4(Some(index)),
-    });
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-    let made = {
-        let _ = socket;
-        Err::<(), _>(std::io::Error::from(ErrorKind::Unsupported))
-    };
-    made.map_err(|error| Error::new(format!("cannot mark a socket as Dynet's own: {error}")))
+    dynet_host::bind(socket, mark, six)
+        .map_err(|error| Error::new(format!("cannot mark a socket as Dynet's own: {error}")))
 }
 
 pub fn ending(kind: ErrorKind) -> Fault {

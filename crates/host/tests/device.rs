@@ -1,4 +1,4 @@
-use dynet_tun::Device;
+use dynet_host::Device;
 use std::io::ErrorKind;
 
 #[test]
@@ -38,7 +38,7 @@ fn metadata() {
         .expect("unrelated child");
     let name = device.name().to_string();
     drop(device);
-    let absent = dynet_tun::index(&name).is_err();
+    let absent = dynet_host::macos::index(&name).is_err();
     child.wait().expect("child exits");
     assert!(absent, "an unrelated child must not keep the device alive");
 }

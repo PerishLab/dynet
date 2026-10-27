@@ -40,7 +40,7 @@ impl Veil {
                 "PF has no com.apple wildcard anchor; the root rules were left untouched",
             ));
         }
-        let face = dynet_tun::name(instance.get());
+        let face = dynet_host::macos::name(instance.get());
         let rules = rules(&face, seat);
         let anchor = Wall(instance).anchor();
         feed("/sbin/pfctl", &["-n", "-a", &anchor, "-f", "-"], &rules)?;

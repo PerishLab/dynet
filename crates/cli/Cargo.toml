@@ -22,7 +22,7 @@ plumb.workspace = true
 signal-hook.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-dynet-windows.workspace = true
+dynet-host.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

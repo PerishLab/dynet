@@ -19,7 +19,7 @@ use windows_sys::core::GUID;
 
 const CAPACITY: u32 = 0x40_0000;
 
-pub(super) struct Device {
+pub(crate) struct Device {
     library: &'static Library,
     adapter: Adapter,
     session: Session,
@@ -31,7 +31,7 @@ unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
 impl Device {
-    pub(super) fn open(name: &str) -> Result<Self> {
+    pub(crate) fn open(name: &str) -> Result<Self> {
         if name.is_empty() || name.len() >= 128 || name.contains('\0') {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
@@ -62,11 +62,11 @@ impl Device {
         })
     }
 
-    pub(super) fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
-    pub(super) fn luid(&self) -> u64 {
+    pub(crate) fn luid(&self) -> u64 {
         let mut luid = NET_LUID_LH { Value: 0 };
         unsafe {
             (self.library.luid)(self.adapter, &mut luid);
@@ -74,14 +74,14 @@ impl Device {
         }
     }
 
-    pub(super) fn index(&self) -> Result<u32> {
+    pub(crate) fn index(&self) -> Result<u32> {
         let luid = NET_LUID_LH { Value: self.luid() };
         let mut index = 0;
         let code = unsafe { ConvertInterfaceLuidToIndex(&luid, &mut index) };
         settle(code).map(|()| index)
     }
 
-    pub(super) fn mtu(&self) -> Result<u32> {
+    pub(crate) fn mtu(&self) -> Result<u32> {
         let mut row: MIB_IPINTERFACE_ROW = unsafe { std::mem::zeroed() };
         unsafe { InitializeIpInterfaceEntry(&mut row) };
         row.Family = AF_INET;
@@ -90,7 +90,7 @@ impl Device {
         settle(code).map(|()| row.NlMtu)
     }
 
-    pub(super) fn receive(&self, room: &mut [u8]) -> Result<Option<usize>> {
+    pub(crate) fn receive(&self, room: &mut [u8]) -> Result<Option<usize>> {
         let mut size = 0;
         let packet = unsafe { (self.library.receive)(self.session, &mut size) };
         if packet.is_null() {
@@ -112,7 +112,7 @@ impl Device {
         }
     }
 
-    pub(super) fn send(&self, packet: &[u8]) -> Result<()> {
+    pub(crate) fn send(&self, packet: &[u8]) -> Result<()> {
         let size = u32::try_from(packet.len())
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "a packet outgrew the device"))?;
         let slot = unsafe { (self.library.allocate)(self.session, size) };
@@ -126,7 +126,7 @@ impl Device {
         Ok(())
     }
 
-    pub(super) fn wait(&self, span: Duration) -> Result<()> {
+    pub(crate) fn wait(&self, span: Duration) -> Result<()> {
         let millis = u32::try_from(span.as_millis()).unwrap_or(u32::MAX - 1);
         match unsafe { WaitForSingleObject(self.event, millis) } {
             WAIT_FAILED => Err(Error::last_os_error()),
@@ -144,7 +144,7 @@ impl Drop for Device {
     }
 }
 
-pub(super) fn widen(text: &OsStr) -> Vec<u16> {
+pub(crate) fn widen(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(Some(0)).collect()
 }
 

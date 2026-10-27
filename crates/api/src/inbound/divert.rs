@@ -8,7 +8,7 @@ mod usher;
 use super::lasting;
 use super::warren::{Served, Warren, stand};
 use dynet_core::{Error, Span};
-use dynet_tun::{Device, ROOM};
+use dynet_host::{Device, ROOM};
 pub(super) use roll::Held;
 use roll::Roll;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
@@ -43,7 +43,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         resolver,
     } = stage::stage(warren, span)?;
     #[cfg(windows)]
-    dynet_windows::ready();
+    dynet_host::windows::ready();
     let seat = listener
         .local_addr()
         .map_err(|error| Error::new(format!("cannot read the diverter seat: {error}")))?
