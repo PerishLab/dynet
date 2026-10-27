@@ -1,6 +1,8 @@
 use super::{Divert, Held};
 use dynet_core::Error;
-use socket2::{Domain, SockRef, Socket, Type};
+#[cfg(target_os = "linux")]
+use socket2::SockRef;
+use socket2::{Domain, Socket, Type};
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 use std::time::Duration;
 
@@ -67,7 +69,10 @@ fn borne(stream: &TcpStream, transit: u16) -> Option<SocketAddr> {
     if seated.port() != transit {
         return Some(seated);
     }
-    SockRef::from(stream).original_dst().ok()?.as_socket()
+    #[cfg(target_os = "linux")]
+    return SockRef::from(stream).original_dst().ok()?.as_socket();
+    #[cfg(not(target_os = "linux"))]
+    None
 }
 
 fn shaped(caller: SocketAddrV4, target: SocketAddrV4) -> Held {

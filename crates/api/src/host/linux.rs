@@ -6,9 +6,9 @@ mod settle;
 mod shape;
 mod veil;
 
-pub use establish::{Ground, Standing, establish};
+pub use establish::establish;
 pub use link::Link;
-pub use reclaim::{Cleared, reclaim, sweep};
+pub use reclaim::{reclaim, sweep};
 pub use route::Route;
 pub use settle::Settled;
 pub use shape::{Shape, read, survey};

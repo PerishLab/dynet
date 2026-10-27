@@ -1,23 +1,24 @@
 mod fragment;
+mod ground;
+pub use ground::{Cleared, Ground, Standing};
 mod journal;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
 mod state;
 #[cfg(windows)]
 mod windows;
 
 pub use fragment::{Fragment, Held, MARKER, held};
 pub use journal::{Journal, clock};
-#[cfg(not(windows))]
-pub use linux::{
-    Cleared, Ground, Link, Route, Settled, Shape, Standing, Veil, establish, read, reclaim, survey,
-    sweep,
-};
+#[cfg(target_os = "linux")]
+pub use linux::{Link, Route, Settled, Shape, Veil, establish, read, reclaim, survey, sweep};
+#[cfg(target_os = "macos")]
+pub use macos::{Link, Route, Settled, Veil, establish, reclaim};
 pub use state::State;
 #[cfg(windows)]
-pub use windows::{
-    Cleared, Ground, Link, Route, Settled, Standing, Veil, establish, program, reclaim,
-};
+pub use windows::{Link, Route, Settled, Veil, establish, program, reclaim};
 
 use dynet_core::Error;
 use std::io::Write;

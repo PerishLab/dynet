@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(target_os = "linux")]
 
 use dynet_api::host::{Shape, read};
 use std::fs;
