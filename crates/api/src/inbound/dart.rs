@@ -91,6 +91,7 @@ impl Divert<'_> {
 
     pub(super) fn flock(&self, darts: &UdpSocket) {
         let _ = darts.set_read_timeout(Some(REST));
+        let _ = darts.set_write_timeout(Some(Duration::from_millis(200)));
         let flock: Flock = Mutex::new(HashMap::new());
         let held = &flock;
         let mut room = [0u8; ROOM];
@@ -172,10 +173,16 @@ impl Divert<'_> {
         let (darts, peer, held) = seat;
         let (charge, borne) = told;
         match link.bide(patience) {
-            Taken::Body(body) => self.pour(&body, (darts, peer), charge, borne).then(|| {
-                touch(held, peer.port());
-                IDLE
-            }),
+            Taken::Body(body) => {
+                if !*borne {
+                    *borne = true;
+                    self.answer(charge);
+                }
+                link.allow(|| darts.send_to(&body, peer).is_ok()).then(|| {
+                    touch(held, peer.port());
+                    IDLE
+                })
+            }
             Taken::Spent => None,
             Taken::Empty => self.rest(held, peer),
         }
@@ -187,20 +194,6 @@ impl Divert<'_> {
             return None;
         };
         Some(left)
-    }
-
-    fn pour(
-        &self,
-        body: &[u8],
-        seat: (&UdpSocket, SocketAddr),
-        charge: &Charge,
-        borne: &mut bool,
-    ) -> bool {
-        if !*borne {
-            *borne = true;
-            self.answer(charge);
-        }
-        seat.0.send_to(body, seat.1).is_ok()
     }
 
     fn answer(&self, charge: &Charge) {

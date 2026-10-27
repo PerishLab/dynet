@@ -125,10 +125,11 @@ are.
   exactly one of `exact`, `suffix` or `holds` and the cluster that carries what
   it matches. One name or prefix belongs to one rule only. The `fallback` is
   `direct` or any declared cluster; that choice is the deployment's, not the
-  product's. The running service re-reads the whole manifest on SIGHUP and
-  keeps the standing one when the new one refuses, so a bad edit costs nothing;
-  the ledger of issued addresses and each unchanged pool's standing survive a
-  replacement.
+  product's. The running service loads complete encrypted configurations through
+  the published Secrets SDK. DESIGN.md owns bootstrap, trust, offline cache,
+  subscription/reporting, durable application and signed revocation. A bad
+  candidate retains the confirmed policy; each unchanged pool's standing and
+  the issued-address ledger survive replacement. SIGHUP requests reconciliation.
 - A destination is decided by one pure function over the manifest, the ledger,
   the name the caller gave if any, the address and the bearing, taking the
   first of five rows that holds: a name that is the destination's own and is
@@ -161,17 +162,16 @@ are.
   a thirty-third makes the entry `crowded`), the cluster, and when it was
   issued, expires and is retained until. An entry leaves only once
   `max(TTL + 120 s, floor)` has passed and no session to the address is
-  standing; the floor is `--retain`, 24 h by default, because applications
+  standing; the floor is encrypted `retain`, normally 24 h, because applications
   that ignore TTL keep dialling an address long after it expired, and an
   address that left the kernel table is reached around Dynet. A changed floor
   binds only entries issued after it.
-- The ledger is written atomically to `/var/lib/dynet/<instance>.ledger` (or
-  `--ledger`) within a second of changing, and loaded, re-judged and projected
-  into the instance's route table before any seat opens. A ledger that exists
-  and cannot be read refuses the start: an empty one would release addresses
-  that callers still hold. Discarding it is a manual deletion with that cost
-  accepted. The file is a JSON array of entries that only ever gains fields,
-  pinned by a test, so an older build can read what a newer one wrote.
+- The ledger and applied configuration pointer commit together in the private
+  `<state>/<instance>.control/checkpoint`. DNS address records are durable before
+  the corresponding answer, including memory hits. Invalid or missing existing
+  state refuses startup. The ledger's entry semantics stay unchanged, but there
+  is no old ledger-file reader or plaintext manifest path; cutover explicitly
+  preserves issued addresses and removes the former local state.
 - The kernel table is reconciled against the ledger, never trusted to it: a
   settle adds what is missing and removes what is not issued in one `ip -batch`,
   then reads the table back and reports a shortfall as an error. It runs at
@@ -367,7 +367,7 @@ and flush communication, with runtime files in `run`. SCM captures the actual
 executable and resolved absolute state root at registration. The instance's
 `.log` file records service events without protocol material. Installation
 changes do not discover or migrate an old user seat; an approved local migration
-preserves the manifest ACL and issued ledger, replaces the service registration
+provisions machine-private bootstrap/key ACLs and preserves the issued ledger, replaces the service registration
 and removes the old seat after validation. Linux defaults stay `/var/lib/dynet`
 and `/run/dynet`; an explicit root uses its own `run` directory.
 
@@ -412,7 +412,7 @@ and PF reference state; launchd captures that root and the actual executable.
 The operator installs machine program/version seats explicitly under
 `/Library/Dynet/bin` and `/Library/Dynet/versions` through the shared manager.
 The root LaunchDaemon refuses a user-writable executable or ancestor and
-requires a root-owned private manifest. It starts at boot and restarts failures
+requires a root-owned private bootstrap and referenced keys. It starts at boot and restarts failures
 after launchd's five-second throttle. The worker retains protection when it
 receives a stop or shutdown signal; explicit service stop/down performs the
 teardown after unloading it. Uninstall also removes its owned property list.
@@ -435,10 +435,12 @@ landing, run `cargo fmt --all --check`,
 `cargo check --locked --workspace --all-targets --release`,
 `cargo test --locked --workspace`, and `ectropy .`.
 
-A test that reaches the network is `#[ignore]` and is driven on a host, never
-here. The workstation's own tunnel client answers for servers that do not
-exist, so a check made against it passes or fails for reasons that are not the
-code's.
+Product tests may hold their own loopback listener for a bounded transport or
+executable smoke check. Tests reaching external services are explicitly ignored
+and driven on the declared host. Multi-product interoperability belongs in
+Seatrial through public executables and interfaces; it does not import product
+source. The workstation's own tunnel can rewrite destinations, so external
+network results require independent host evidence.
 
 Never work or commit directly in the clean `main` integration checkout after
 the initial repository bootstrap. Use a dedicated topic branch and land through

@@ -9,7 +9,7 @@ impl Divert<'_> {
         target: SocketAddrV4,
         sight: &Sight,
     ) -> Option<(Chosen, String)> {
-        let decision = self.warren.decide(sight)?;
+        let (decision, selection) = self.warren.decide(sight)?;
         if decision.ground() == Ground::Named {
             self.tally(|served| served.named += 1);
         }
@@ -21,7 +21,7 @@ impl Divert<'_> {
                 if let Some(aim) = decision.aim() {
                     (self.told())(&format!("{target} aim={}", aim.get()));
                 }
-                let chosen = self.warren.passage(cluster, sight.bearing);
+                let chosen = self.warren.pick(selection, cluster, sight.bearing);
                 if chosen.is_none() {
                     (self.told())(&format!(
                         "{target} found no node in cluster {}",
@@ -35,7 +35,7 @@ impl Divert<'_> {
                     "{target} leaves directly on {:?}",
                     decision.ground()
                 ));
-                Some((self.warren.direct(), aimed))
+                Some((self.warren.direct(selection)?, aimed))
             }
             Course::Direct => {
                 (self.told())(&format!(

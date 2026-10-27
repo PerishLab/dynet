@@ -71,8 +71,17 @@ impl Tunnel {
     }
 
     pub fn dial(endpoint: &Endpoint) -> Result<Self, Error> {
+        Self::connect(endpoint, None)
+    }
+
+    pub fn connect(endpoint: &Endpoint, gate: Option<&super::Circuit>) -> Result<Self, Error> {
         let seat = endpoint.seat()?;
         let stream = crate::outbound::reach(seat, endpoint.mark, NEAR)?;
+        let stream = if let Some(gate) = gate {
+            gate.attach(stream)?
+        } else {
+            stream
+        };
         stream
             .set_read_timeout(Some(BRIEF))
             .and_then(|()| stream.set_write_timeout(Some(PATIENT)))

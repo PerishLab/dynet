@@ -7,6 +7,7 @@ mod flush;
 mod node;
 mod observation;
 mod platform;
+mod source;
 mod watch;
 
 use platform::Boundary;
@@ -43,6 +44,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Identity {
+        #[arg(long)]
+        output: PathBuf,
+    },
     Doctor,
     Up {
         #[arg(long, default_value = WHOLE)]
@@ -60,7 +65,7 @@ enum Command {
     Service(Service),
     Resolve {
         #[arg(long)]
-        manifest: PathBuf,
+        bootstrap: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long)]
@@ -70,7 +75,7 @@ enum Command {
     },
     Reach {
         #[arg(long)]
-        manifest: PathBuf,
+        bootstrap: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long, default_value = "8")]
@@ -78,20 +83,12 @@ enum Command {
     },
     Spread {
         #[arg(long)]
-        manifest: PathBuf,
+        bootstrap: PathBuf,
         #[arg(long)]
         cluster: String,
         #[arg(long, default_value = "16")]
         count: usize,
         #[arg(long, default_value = PROBE)]
-        target: String,
-    },
-    Exit {
-        #[arg(long)]
-        seat: String,
-        #[arg(long)]
-        secret: String,
-        #[arg(long, default_value = "api.ipify.org")]
         target: String,
     },
 }
@@ -163,37 +160,50 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
     #[cfg(target_os = "macos")]
     host::macos::configure(state.root())?;
     match cli.command {
+        Command::Identity { output } => {
+            let recipient =
+                dynet_api::control::identity(&output, dynet_api::control::Private::machine())?;
+            println!("{recipient}");
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Doctor => Boundary(instance).doctor(&config),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
         Command::Standing => Boundary(instance).reading(&state),
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand, &state)?),
-        Command::Carry(errand) => carry::carry(&errand),
+        Command::Carry(errand) => {
+            let session = source::read(errand.path(), &instance, &state)?;
+            carry::carry(&errand, source::loaded(&session)?)
+        }
         Command::Flush(errand) => flush::flush(&instance, &errand, &state),
         #[cfg(any(windows, target_os = "macos"))]
         Command::Service(service) => Boundary(instance).service(&config, &service, &state),
         Command::Resolve {
-            manifest,
+            bootstrap,
             cluster,
             name,
             count,
-        } => node::probe(&manifest, &cluster, &name, count),
+        } => {
+            let session = source::read(&bootstrap, &instance, &state)?;
+            node::Nodes(source::loaded(&session)?).probe(&cluster, &name, count)
+        }
         Command::Reach {
-            manifest,
+            bootstrap,
             cluster,
             count,
-        } => node::reach(&manifest, &cluster, count),
+        } => {
+            let session = source::read(&bootstrap, &instance, &state)?;
+            node::Nodes(source::loaded(&session)?).reach(&cluster, count)
+        }
         Command::Spread {
-            manifest,
+            bootstrap,
             cluster,
             count,
             target,
-        } => node::spread(&manifest, &cluster, &Aim { count, target }),
-        Command::Exit {
-            seat,
-            secret,
-            target,
-        } => node::exit(&seat, &secret, &target),
+        } => {
+            let session = source::read(&bootstrap, &instance, &state)?;
+            node::Nodes(source::loaded(&session)?).spread(&cluster, &Aim { count, target })
+        }
     }
 }
 

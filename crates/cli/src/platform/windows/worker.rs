@@ -1,5 +1,5 @@
 use crate::watch::{self, Stage};
-use dynet_api::host::{self, Journal, clock};
+use dynet_api::host::{self, clock};
 use dynet_core::{Error, Instance};
 use std::io::Write;
 use std::process::ExitCode;
@@ -26,9 +26,13 @@ pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Erro
 }
 
 fn work(instance: &Instance, stage: &Stage) -> u32 {
-    let log = Journal::new(instance, stage.state, None)
-        .path()
-        .with_extension("log");
+    if dynet_api::control::Private::machine()
+        .folder(stage.state.root())
+        .is_err()
+    {
+        return 1;
+    }
+    let log = stage.state.root().join(format!("{}.log", instance.get()));
     let Some(parent) = log.parent() else { return 1 };
     if std::fs::create_dir_all(parent).is_err() {
         return 1;

@@ -107,29 +107,26 @@ impl Boundary {
         }
         Span::new(&config.span)?;
         let program = host::program()?;
-        let manifest = std::fs::canonicalize(&errand.manifest).map_err(|error| {
-            Error::new(format!(
-                "cannot place {}: {error}",
-                errand.manifest.display()
-            ))
+        let bootstrap = std::path::absolute(&errand.bootstrap)
+            .map_err(|_| Error::new("cannot place the local bootstrap"))?;
+        let private = dynet_api::control::Private::machine();
+        private.folder(state.root()).map_err(|_| {
+            Error::new(
+                "the service state directory must be private to administrators and LocalSystem",
+            )
         })?;
+        dynet_api::control::Bootstrap::read(&bootstrap, private)?
+            .inspect(private, self.0.mark())?;
         let name = self.0.get();
-        let mut line = format!(
-            "\"{}\" --instance {name} --port {} --span {} --state {} divert --service --manifest \"{}\" --upstream {} --claim {} --retain {} --seconds 0",
+        let line = format!(
+            "\"{}\" --instance {name} --port {} --span {} --state {} divert --service --bootstrap {} --claim {} --seconds 0",
             program.display(),
             config.port,
             config.span,
             quoted(&plain(state.root())),
-            plain(&manifest),
-            quoted(&errand.upstream),
+            quoted(&plain(&bootstrap)),
             quoted(&errand.claim),
-            errand.retain
         );
-        if let Some(ledger) = &errand.ledger {
-            let ledger = std::path::absolute(ledger)
-                .map_err(|error| Error::new(format!("cannot place the ledger: {error}")))?;
-            line.push_str(&format!(" --ledger \"{}\"", ledger.display()));
-        }
         let display = format!("Dynet {name}");
         host::run(
             "sc.exe",

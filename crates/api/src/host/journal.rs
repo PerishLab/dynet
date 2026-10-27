@@ -1,6 +1,8 @@
+use crate::control::Cache;
 use dynet_core::{Error, Instance, Ledger};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,15 +10,17 @@ pub struct Journal {
     path: PathBuf,
     order: PathBuf,
     stained: AtomicBool,
+    cache: Option<Arc<Cache>>,
 }
 
 impl Journal {
-    pub fn new(instance: &Instance, state: &super::State, path: Option<PathBuf>) -> Self {
+    pub fn new(instance: &Instance, state: &super::State) -> Self {
         let name = instance.get();
         Self {
-            path: path.unwrap_or_else(|| state.root().join(format!("{name}.ledger"))),
+            path: state.root().join(format!("{name}.control/checkpoint")),
             order: state.runtime().join(format!("{name}.flush")),
             stained: AtomicBool::new(false),
+            cache: None,
         }
     }
 
@@ -36,24 +40,22 @@ impl Journal {
         self.order.with_extension("flushed")
     }
 
+    pub fn controlled(instance: &Instance, state: &super::State, cache: Arc<Cache>) -> Self {
+        let mut journal = Self::new(instance, state);
+        journal.cache = Some(cache);
+        journal
+    }
+
     pub fn load(&self, floor: u64) -> Result<Ledger, Error> {
-        match fs::read_to_string(&self.path) {
-            Ok(text) => Ledger::read(&text, floor).map_err(|error| {
-                Error::new(format!(
-                    "{} is unreadable, so dynet refuses to start rather than release issued addresses; remove it by hand to accept that: {error}",
-                    self.path.display()
-                ))
-            }),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Ledger::new(floor)),
-            Err(error) => Err(Error::new(format!(
-                "cannot read {}: {error}",
-                self.path.display()
-            ))),
-        }
+        self.cache
+            .as_ref()
+            .ok_or_else(unbound)?
+            .checkpoint()?
+            .ledger(floor)
     }
 
     pub fn save(&self, ledger: &Ledger) -> Result<(), Error> {
-        place(&self.path, &ledger.write())
+        self.cache.as_ref().ok_or_else(unbound)?.save(ledger)
     }
 
     pub fn stain(&self) {
@@ -95,4 +97,8 @@ fn place(path: &Path, text: &str) -> Result<(), Error> {
     let part = path.with_extension("part");
     fs::write(&part, text).map_err(failed)?;
     fs::rename(&part, path).map_err(failed)
+}
+
+fn unbound() -> Error {
+    Error::new("the journal has no encrypted configuration checkpoint")
 }

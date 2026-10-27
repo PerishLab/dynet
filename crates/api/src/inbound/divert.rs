@@ -111,6 +111,7 @@ impl Divert<'_> {
             }
             if since >= heeded + HEED {
                 heeded = since;
+                self.warren.renew();
                 self.warren.heed();
             }
             if self.warren.reload.swap(false, Ordering::Relaxed) {

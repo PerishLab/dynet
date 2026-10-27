@@ -1,61 +1,12 @@
-use dynet_api::outbound::veil;
 use dynet_api::outbound::{Endpoint, PROBE, Roster, Run, Tunnel};
-use dynet_api::{Entry, Loaded, manifest, resolver};
+use dynet_api::{Entry, Loaded, resolver};
 use dynet_core::{Cluster, Error, Form};
-use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 const LOOSE: u32 = 0;
 
-#[locus::trace(with = plumb::observation::view())]
-pub fn reach(path: &Path, cluster: &str, count: usize) -> Result<ExitCode, Error> {
-    let loaded = manifest::read(path)?;
-    let entries = loaded.entries();
-    let wanted = pooled(&loaded, cluster)?;
-    let labels: Vec<&str> = wanted
-        .nodes()
-        .iter()
-        .map(|node| node.label().get())
-        .take(count)
-        .collect();
-    let mut failures = 0;
-    for (index, label) in labels.iter().enumerate() {
-        let began = Instant::now();
-        match visit(entries, label) {
-            Ok(seen) => println!(
-                "{cluster}[{index}]: {} opened {}ms whole {}ms",
-                seen.egress,
-                seen.opened.as_millis(),
-                seen.whole.as_millis()
-            ),
-            Err(error) => {
-                failures += 1;
-                println!(
-                    "{cluster}[{index}]: refused after {}ms: {error}",
-                    began.elapsed().as_millis()
-                );
-            }
-        }
-    }
-    Ok(match failures {
-        0 => ExitCode::SUCCESS,
-        _ => ExitCode::from(1),
-    })
-}
-
-pub fn probe(path: &Path, cluster: &str, name: &str, count: usize) -> Result<ExitCode, Error> {
-    let loaded = manifest::read(path)?;
-    let entries = loaded.entries();
-    let wanted = pooled(&loaded, cluster)?;
-    for (index, node) in wanted.nodes().iter().take(count).enumerate() {
-        match lookup(entries, node.label().get(), name) {
-            Ok(found) => println!("{cluster}[{index}]: {found:?}"),
-            Err(error) => println!("{cluster}[{index}]: refused: {error}"),
-        }
-    }
-    Ok(ExitCode::SUCCESS)
-}
+pub struct Nodes<'a>(pub &'a Loaded);
 
 pub fn lookup(entries: &[Entry], label: &str, name: &str) -> Result<Vec<resolver::Answer>, Error> {
     let mut tunnel = board(entries, label, "1.1.1.1", 53)?;
@@ -149,29 +100,6 @@ pub struct Aim {
     pub target: String,
 }
 
-pub fn spread(path: &Path, cluster: &str, aim: &Aim) -> Result<ExitCode, Error> {
-    let loaded = manifest::read(path)?;
-    let wanted = pooled(&loaded, cluster)?;
-    let roster = Roster::aimed(loaded.entries(), &aim.target, LOOSE);
-    let run = roster.drive(wanted, aim.count)?;
-    Ok(report(&run, aim.count))
-}
-
-fn pooled<'a>(loaded: &'a Loaded, cluster: &str) -> Result<&'a Cluster, Error> {
-    let found = loaded
-        .manifest()
-        .clusters()
-        .iter()
-        .find(|item| item.name().get() == cluster)
-        .ok_or_else(|| Error::new(format!("the manifest declares no cluster {cluster}")))?;
-    match found.form() {
-        Form::Pool(_) => Ok(found),
-        Form::Alias(_) | Form::Via(..) => Err(Error::new(format!(
-            "cluster {cluster} is not a pool; name the pool it leads to"
-        ))),
-    }
-}
-
 pub fn report(run: &Run, count: usize) -> ExitCode {
     println!("{} through cluster {}", PROBE, run.cluster().get());
     for trial in run.trials() {
@@ -198,55 +126,77 @@ pub fn report(run: &Run, count: usize) -> ExitCode {
     }
 }
 
-pub fn exit(seat: &str, secret: &str, target: &str) -> Result<ExitCode, Error> {
-    let drawn = unbase(secret).ok_or_else(|| Error::new("the key is not base sixty four"))?;
-    let mut key = [0u8; 16];
-    if drawn.len() != key.len() {
-        return Err(Error::new(format!(
-            "the key carries {} bytes, not sixteen",
-            drawn.len()
-        )));
-    }
-    key.copy_from_slice(&drawn);
-    let mut stream = std::net::TcpStream::connect(seat)
-        .map_err(|error| Error::new(format!("cannot reach {seat}: {error}")))?;
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(15)))
-        .map_err(|error| Error::new(format!("cannot bound the session: {error}")))?;
-    let (mut cloak, mut shroud) = veil(key)?;
-    let asking =
-        format!("GET /?format=text HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n");
-    cloak.greet(&mut stream, (target, 80), asking.as_bytes())?;
-    let mut answer = Vec::new();
-    while let Some(part) = shroud.receive(&mut stream)? {
-        answer.extend_from_slice(&part);
-        if answer.len() > 4096 {
-            break;
+impl Nodes<'_> {
+    #[locus::trace(with = plumb::observation::view())]
+    pub fn reach(&self, cluster: &str, count: usize) -> Result<ExitCode, Error> {
+        let loaded = self.0;
+        let entries = loaded.entries();
+        let wanted = self.pooled(cluster)?;
+        let labels: Vec<&str> = wanted
+            .nodes()
+            .iter()
+            .map(|node| node.label().get())
+            .take(count)
+            .collect();
+        let mut failures = 0;
+        for (index, label) in labels.iter().enumerate() {
+            let began = Instant::now();
+            match visit(entries, label) {
+                Ok(seen) => println!(
+                    "{cluster}[{index}]: {} opened {}ms whole {}ms",
+                    seen.egress,
+                    seen.opened.as_millis(),
+                    seen.whole.as_millis()
+                ),
+                Err(error) => {
+                    failures += 1;
+                    println!(
+                        "{cluster}[{index}]: refused after {}ms: {error}",
+                        began.elapsed().as_millis()
+                    );
+                }
+            }
         }
+        Ok(match failures {
+            0 => ExitCode::SUCCESS,
+            _ => ExitCode::from(1),
+        })
     }
-    let text = String::from_utf8_lossy(&answer);
-    let egress = text.rsplit("\r\n\r\n").next().unwrap_or_default().trim();
-    println!("{seat} speaks from {egress}");
-    Ok(match text.starts_with("HTTP/1.1 200") {
-        true => ExitCode::SUCCESS,
-        false => ExitCode::from(1),
-    })
-}
 
-pub fn unbase(text: &str) -> Option<Vec<u8>> {
-    const CODE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut held = 0u32;
-    let mut bits = 0u32;
-    let mut out = Vec::new();
-    for byte in text.bytes().filter(|item| *item != b'=') {
-        let place = u32::try_from(CODE.iter().position(|item| *item == byte)?).ok()?;
-        held = (held << 6) | place;
-        bits += 6;
-        if bits < 8 {
-            continue;
+    pub fn probe(&self, cluster: &str, name: &str, count: usize) -> Result<ExitCode, Error> {
+        let loaded = self.0;
+        let entries = loaded.entries();
+        let wanted = self.pooled(cluster)?;
+        for (index, node) in wanted.nodes().iter().take(count).enumerate() {
+            match lookup(entries, node.label().get(), name) {
+                Ok(found) => println!("{cluster}[{index}]: {found:?}"),
+                Err(error) => println!("{cluster}[{index}]: refused: {error}"),
+            }
         }
-        bits -= 8;
-        out.push(u8::try_from((held >> bits) & 0xff).ok()?);
+        Ok(ExitCode::SUCCESS)
     }
-    Some(out)
+
+    pub fn spread(&self, cluster: &str, aim: &Aim) -> Result<ExitCode, Error> {
+        let loaded = self.0;
+        let wanted = self.pooled(cluster)?;
+        let roster = Roster::aimed(loaded.entries(), &aim.target, LOOSE);
+        let run = roster.drive(wanted, aim.count)?;
+        Ok(report(&run, aim.count))
+    }
+
+    fn pooled(&self, cluster: &str) -> Result<&Cluster, Error> {
+        let loaded = self.0;
+        let found = loaded
+            .manifest()
+            .clusters()
+            .iter()
+            .find(|item| item.name().get() == cluster)
+            .ok_or_else(|| Error::new(format!("the manifest declares no cluster {cluster}")))?;
+        match found.form() {
+            Form::Pool(_) => Ok(found),
+            Form::Alias(_) | Form::Via(..) => Err(Error::new(format!(
+                "cluster {cluster} is not a pool; name the pool it leads to"
+            ))),
+        }
+    }
 }

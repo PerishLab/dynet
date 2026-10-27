@@ -11,7 +11,7 @@ repository = "https://github.com/PerishLab/dynet"
 [workspace.dependencies]
 locus = { version = "0", registry = "perish" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 tempfile = "3"
 clap = { version = "4.5", features = ["derive"] }
 dynet-api = { path = "crates/api" }
@@ -34,4 +34,7 @@ socket2 = { version = "0.5", features = ["all"] }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
 libc = "0.2"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_WinSock", "Win32_Security", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_System_Rpc", "Win32_System_Services", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_System_Rpc", "Win32_System_Services", "Win32_System_Threading"] }
+
+secrets = { version = "0", registry = "perish" }
+zeroize = "1"

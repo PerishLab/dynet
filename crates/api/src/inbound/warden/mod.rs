@@ -1,12 +1,15 @@
 use super::lasting;
+mod wire;
 use super::store::{Key, Recall};
-use super::warren::{self, Chosen, Warren};
-use crate::host::{Route, clock};
-use crate::outbound::Listener;
+use super::warren::{self, Warren};
+use crate::host::clock;
+use crate::outbound::Circuit;
 use crate::resolver::{self, Answer, Packet, Query};
-use dynet_core::{Bearing, Domain, Error, Fault, Name, Verdict, spared};
+use dynet_core::{Bearing, Domain, Error, Name, Verdict};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use wire::{capture, spare, through};
 
 const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
@@ -16,6 +19,8 @@ const MARK: u16 = 0x7a7a;
 struct Call {
     asked: Vec<u8>,
     peer: SocketAddr,
+    stamp: String,
+    circuit: Arc<Circuit>,
 }
 
 struct Post<'a> {
@@ -25,6 +30,7 @@ struct Post<'a> {
 
 pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(), Error> {
     let _ = socket.set_read_timeout(Some(REST));
+    let _ = socket.set_write_timeout(Some(REST));
     let post = Post { warren, socket };
     let started = Instant::now();
     std::thread::scope(|scope| {
@@ -33,9 +39,15 @@ pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(),
             let Ok((size, peer)) = socket.recv_from(&mut room) else {
                 continue;
             };
+            let held = warren.current();
+            let Ok(circuit) = held.fence.ticket() else {
+                continue;
+            };
             let call = Call {
                 asked: room[..size].to_vec(),
                 peer,
+                stamp: held.stamp.clone(),
+                circuit,
             };
             scope.spawn(|| post.answer(call));
         }
@@ -60,11 +72,13 @@ impl Post<'_> {
         }
         let domain = Domain::new(&query.name)?;
         let Some(cluster) = self.warren.claimed(&domain) else {
-            let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
+            let plain =
+                asking.relay(&self.warren.current().upstream, self.warren.instance.mark())?;
             self.speak(&plain, call)?;
             return Ok(format!("{} left to the upstream", query.name));
         };
         let key = Key {
+            stamp: call.stamp.clone(),
             name: query.name.clone(),
             cluster: cluster.clone(),
         };
@@ -108,7 +122,7 @@ impl Post<'_> {
                 query.name, query.kind
             ));
         }
-        let plain = asking.relay(self.warren.upstream, self.warren.instance.mark())?;
+        let plain = asking.relay(&self.warren.current().upstream, self.warren.instance.mark())?;
         self.speak(&plain, call)?;
         Ok(format!(
             "{} asked for type {}, left to the upstream",
@@ -149,13 +163,14 @@ impl Post<'_> {
                 .lookup(IpAddr::V4(item.address))
                 .is_some_and(|issue| !issue.released())
         });
-        drop(ledger);
         if live {
             for item in found {
                 capture(self.warren.instance, IpAddr::V4(item.address))?;
             }
+            self.warren.journal.save(&ledger)?;
             return Ok(());
         }
+        drop(ledger);
         self.keep(domain, found, cluster)?;
         Ok(())
     }
@@ -182,8 +197,12 @@ impl Post<'_> {
     }
 
     fn speak(&self, body: &[u8], call: &Call) -> Result<(), Error> {
-        self.socket
-            .send_to(body, call.peer)
+        let held = self.warren.held.read().map_err(|_| poisoned())?;
+        if held.paused || held.stamp != call.stamp {
+            return Err(Error::new("the DNS policy changed before its answer"));
+        }
+        call.circuit
+            .allow(|| self.socket.send_to(body, call.peer))?
             .map(|_| ())
             .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))
     }
@@ -201,6 +220,7 @@ impl Post<'_> {
                 held += 1;
             }
         }
+        self.warren.journal.save(&ledger)?;
         drop(ledger);
         self.warren.journal.stain();
         Ok(held)
@@ -212,7 +232,7 @@ impl Post<'_> {
             let Some(chosen) = self.warren.passage(wanted, Bearing::Stream) else {
                 break;
             };
-            let carried = through(&chosen, self.warren.upstream, framed);
+            let carried = through(&chosen, &self.warren.current().upstream, framed);
             let verdict = match &carried {
                 Ok(_) => Verdict::Answered,
                 Err(fault) => Verdict::Faulted(*fault),
@@ -242,51 +262,6 @@ impl Post<'_> {
     }
 }
 
-fn through(chosen: &Chosen, upstream: &str, framed: &[u8]) -> Result<Vec<u8>, Fault> {
-    let (mut speaker, mut listener) = chosen.passage.open(upstream, 53)?;
-    speaker.send(framed).map_err(|_| Fault::Severed)?;
-    gather(&mut listener).map_err(|_| listener.fault().unwrap_or(Fault::Silent))
-}
-
-fn spare(framed: &[u8]) -> Result<Option<Vec<u8>>, Error> {
-    let reply = framed
-        .get(2..)
-        .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
-    let Some(pruned) = resolver::prune(reply, |address| spared(IpAddr::V4(address)))? else {
-        return Ok(Some(reply.to_vec()));
-    };
-    match resolver::read(&pruned)?.is_empty() {
-        true => Ok(None),
-        false => Ok(Some(pruned)),
-    }
-}
-
 fn poisoned() -> Error {
     Error::new("a lock was left poisoned by a dead thread")
-}
-
-fn capture(instance: &dynet_core::Instance, address: IpAddr) -> Result<(), Error> {
-    match Route::hold(instance, address) {
-        true => Ok(()),
-        false => Err(Error::new(format!(
-            "cannot capture {address}, so its answer is withheld"
-        ))),
-    }
-}
-
-fn gather(listener: &mut Listener) -> Result<Vec<u8>, Error> {
-    let mut framed = Vec::new();
-    while let Some(part) = listener.receive()? {
-        framed.extend_from_slice(&part);
-        if framed.len() >= 2 {
-            let want = usize::from(u16::from_be_bytes([framed[0], framed[1]]));
-            if framed.len() >= want + 2 {
-                break;
-            }
-        }
-    }
-    if framed.len() < 2 {
-        return Err(Error::new("the upstream answered nothing"));
-    }
-    Ok(framed)
 }

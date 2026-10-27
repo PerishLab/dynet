@@ -18,7 +18,7 @@ pub fn flush(
     errand: &Errand,
     state: &dynet_api::host::State,
 ) -> Result<ExitCode, Error> {
-    let journal = Journal::new(instance, state, None);
+    let journal = Journal::new(instance, state);
     let order = match errand.dry {
         true => format!("{} dry", errand.told),
         false => errand.told.clone(),
