@@ -27,6 +27,7 @@ pub(super) fn stage(warren: &Warren, span: Span) -> Result<Seats, Error> {
         match seated {
             Ok((listener, darts)) => {
                 let resolver = UdpSocket::bind((span.seat(), warren.port)).map_err(refused)?;
+                warren.confirmed()?;
                 return Ok(Seats {
                     device,
                     listener,

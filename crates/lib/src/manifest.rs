@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const VERSION: u32 = 1;
 const SPOKEN: [&str; 5] = ["label", "provider", "region", "alias", "protocol"];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Declared {
     label: Label,
     provider: String,
@@ -221,5 +221,11 @@ fn subject(line: &wire::Line) -> Result<Subject, Error> {
             "a rule for cluster {} must carry exactly one of exact, suffix and holds",
             line.cluster
         ))),
+    }
+}
+
+impl std::fmt::Debug for Declared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Declared([redacted])")
     }
 }

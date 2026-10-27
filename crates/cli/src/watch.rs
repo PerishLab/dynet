@@ -1,5 +1,5 @@
 use dynet_api::host::Journal;
-use dynet_api::{inbound, manifest};
+use dynet_api::{control, inbound};
 use dynet_core::{Error, Instance, Span};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,9 +9,7 @@ use std::sync::atomic::AtomicBool;
 #[derive(Clone, clap::Args)]
 pub struct Errand {
     #[arg(long)]
-    pub manifest: PathBuf,
-    #[arg(long, default_value = "1.1.1.1")]
-    pub upstream: String,
+    pub bootstrap: PathBuf,
     #[arg(long, default_value = "0.0.0.0/0")]
     pub claim: String,
     #[arg(long)]
@@ -20,10 +18,6 @@ pub struct Errand {
     pub unit: bool,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
-    #[arg(long)]
-    pub ledger: Option<PathBuf>,
-    #[arg(long, default_value = "86400")]
-    pub retain: u64,
     #[arg(long)]
     pub service: bool,
 }
@@ -79,29 +73,62 @@ pub fn carried(
     let (halt, told) = told;
     let patience = std::time::Duration::from_secs(errand.seconds);
     let ground = (stage.span, patience, stage.transit);
-    let loaded = manifest::read(&errand.manifest)?;
-    let held = std::sync::RwLock::new(Arc::new(inbound::Held::new(loaded, None)?));
-    let journal = Journal::new(instance, stage.state, errand.ledger.clone());
-    let ledger = std::sync::Mutex::new(journal.load(errand.retain)?);
+    let session = control::Session::open(
+        &errand.bootstrap,
+        instance,
+        stage.state,
+        control::Private::machine(),
+    )?;
+    let payload = session
+        .initial
+        .payload
+        .clone()
+        .or_else(|| session.protection.clone())
+        .unwrap_or(control::Payload {
+            loaded: dynet_api::manifest::load(
+                r#"{"version":1,"nodes":[],"clusters":[],"rules":[],"fallback":"direct"}"#,
+            )?,
+            upstream: std::net::Ipv4Addr::new(1, 1, 1, 1),
+            retain: 86400,
+        });
+    let retain = payload.retain;
+    let mut active = inbound::Held::new(payload, None)?;
+    active.stamp = session.initial.assignment.receipt.digest.clone();
+    if session.initial.payload.is_none() {
+        active.fence.close()?;
+        active.paused = true;
+    }
+    let held = std::sync::RwLock::new(Arc::new(active));
+    let journal = Journal::controlled(instance, stage.state, Arc::clone(&session.control.cache));
+    let mut issued = journal.load(retain)?;
+    if session.initial.payload.is_some() {
+        issued.rejudge(
+            held.read()
+                .map_err(|_| Error::new("the policy is poisoned"))?
+                .loaded
+                .manifest(),
+        );
+    }
+    let ledger = std::sync::Mutex::new(issued);
     let reload = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload))
         .map_err(|error| Error::new(format!("cannot listen for a reload: {error}")))?;
     let warren = inbound::Warren {
         instance,
+        initial: &session.initial.assignment,
         held: &held,
         ledger: &ledger,
         journal: &journal,
-        source: &errand.manifest,
+        control: &session.control,
+        projection: instance,
         reload: &reload,
         halt,
         port: stage.port,
-        upstream: &errand.upstream,
         book: &dynet_api::outbound::Book::new(instance.mark()),
         store: &inbound::Store::new(),
         told,
     };
-    warren.rejudged();
     inbound::divert(&warren, ground)
 }
 
@@ -128,14 +155,9 @@ fn told(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
             "/usr/local/bin/dynet --instance {name}{} divert",
             located(state)
         ),
-        format!("--manifest {}", errand.manifest.display()),
+        format!("--bootstrap {}", errand.bootstrap.display()),
         format!("--claim {}", errand.claim),
-        format!("--upstream {}", errand.upstream),
     ];
-    parts.push(format!("--retain {}", errand.retain));
-    if let Some(ledger) = &errand.ledger {
-        parts.push(format!("--ledger {}", ledger.display()));
-    }
     parts.push("--seconds 0".to_string());
     parts.join(" ")
 }

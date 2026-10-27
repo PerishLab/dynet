@@ -61,7 +61,15 @@ impl Reality {
     }
 
     pub fn connect(&self) -> Result<TcpStream, Error> {
-        reach(place(&self.host, self.port)?, self.mark, NEAR)
+        self.socket(None)
+    }
+
+    pub fn socket(&self, gate: Option<&super::Circuit>) -> Result<TcpStream, Error> {
+        let stream = reach(place(&self.host, self.port)?, self.mark, NEAR)?;
+        match gate {
+            Some(gate) => gate.attach(stream),
+            None => Ok(stream),
+        }
     }
 
     pub fn open(

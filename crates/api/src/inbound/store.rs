@@ -8,6 +8,7 @@ pub const PATIENCE: usize = 2;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Key {
+    pub stamp: String,
     pub name: String,
     pub cluster: Name,
 }
@@ -36,6 +37,12 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn clear(&self) {
+        if let Ok(mut held) = self.held.lock() {
+            held.clear();
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

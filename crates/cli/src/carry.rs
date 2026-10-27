@@ -1,5 +1,5 @@
 use dynet_api::outbound::{Exit, Front, Listener, Roster, Speaker, veil};
-use dynet_api::{Entry, manifest};
+use dynet_api::{Entry, Loaded};
 use dynet_core::{Error, Label};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -13,7 +13,7 @@ const CEILING: usize = 4096;
 #[derive(clap::Args)]
 pub struct Errand {
     #[arg(long)]
-    manifest: PathBuf,
+    bootstrap: PathBuf,
     #[arg(long)]
     node: String,
     #[arg(long)]
@@ -32,8 +32,7 @@ struct Plan {
 }
 
 #[locus::trace(with = plumb::observation::view())]
-pub fn carry(errand: &Errand) -> Result<ExitCode, Error> {
-    let loaded = manifest::read(&errand.manifest)?;
+pub fn carry(errand: &Errand, loaded: &Loaded) -> Result<ExitCode, Error> {
     let entries = loaded.entries();
     let plan = Plan {
         front: Front::read(
@@ -157,5 +156,11 @@ fn spoken(errand: &Errand) -> String {
     match &errand.exit {
         Some(exit) => format!("{} through {}", exit, errand.node),
         None => errand.node.clone(),
+    }
+}
+
+impl Errand {
+    pub fn path(&self) -> &std::path::Path {
+        &self.bootstrap
     }
 }

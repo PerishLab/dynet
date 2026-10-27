@@ -167,6 +167,10 @@ impl Ledger {
         true
     }
 
+    pub fn retention(&mut self, floor: u64) {
+        self.floor = floor;
+    }
+
     pub fn contested(&self) -> usize {
         self.contested
     }

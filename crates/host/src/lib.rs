@@ -14,8 +14,10 @@ use macos as native;
 #[cfg(windows)]
 use windows as native;
 
+mod custody;
 mod device;
 mod socket;
 
+pub use custody::Private;
 pub use device::{Device, ROOM};
 pub use socket::bind;

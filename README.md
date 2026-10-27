@@ -6,10 +6,15 @@ concurrently, routed to a pool rather than a single node. It defines no wire
 protocol of its own and runs nothing on the far side. `AGENTS.md` carries the
 product boundary.
 
-On Windows, run elevated with a private manifest file readable by SYSTEM:
+Configuration is a complete signed, age-encrypted document loaded from a file
+or the Secrets API. [DESIGN.md](DESIGN.md) describes enrollment, bootstrap,
+publication, offline recovery and explicit state migration. Existing plaintext
+configuration is not accepted.
+
+On Windows, run elevated with a machine-private bootstrap and key references:
 
 ```powershell
-dynet --instance dynet0 service install --manifest C:\ProgramData\dynet\manifest.json
+dynet --instance dynet0 service install --bootstrap C:\ProgramData\dynet\bootstrap.json
 Start-Service dynet0
 dynet --instance dynet0 doctor
 dynet --instance dynet0 standing
@@ -19,8 +24,9 @@ dynet --instance dynet0 down
 The service starts at boot and restarts after failure. `down` stops it and
 restores direct connectivity; `service remove` also removes its registration.
 A killed process retains DNS and destination protection until restart or
-explicit teardown. Its ledger and log are in `%ProgramData%\dynet`.
-Protect the manifest's ACL because it contains node credentials.
+explicit teardown. Its encrypted configuration checkpoint, issued-address ledger and log live in
+`%ProgramData%\dynet`. Keep that directory and the bootstrap/key ACL private to
+Administrators and LocalSystem.
 
 Windows supports this host's IPv4 traffic. Claimed names receive no AAAA or
 HTTPS/SVCB hints; unclaimed names retain their upstream answers. Applications
@@ -29,10 +35,11 @@ addresses are outside the current capture boundary.
 
 On macOS Apple Silicon, install machine binaries with the manager's explicit
 version root `/Library/Dynet/versions` and bin root `/Library/Dynet/bin`.
-Keep the manifest root-owned and mode 600, then use the installed executable:
+Keep the bootstrap and referenced key root-owned and mode 600, with a private
+state directory, then use the installed executable:
 
 ```sh
-sudo /Library/Dynet/bin/dynet service install --manifest "/Library/Application Support/Dynet/manifest.json"
+sudo /Library/Dynet/bin/dynet service install --bootstrap "/Library/Application Support/Dynet/bootstrap.json"
 sudo /Library/Dynet/bin/dynet doctor
 sudo /Library/Dynet/bin/dynet standing
 sudo /Library/Dynet/bin/dynet service restart

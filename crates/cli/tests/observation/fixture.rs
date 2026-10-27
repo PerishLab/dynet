@@ -5,22 +5,70 @@ use std::process::{Command, Output};
 const MANIFEST: &str = r#"{"version": 1, "nodes": [{"label": "private-label", "protocol": "vmess", "server": "private-server.invalid", "port": 443, "uuid": "6f1c2a3b-0000-4000-8000-000000000001", "udp": true}], "clusters": [{"name": "hk", "nodes": ["private-label"]}], "rules": [], "fallback": "direct"}"#;
 
 pub(super) struct Fixture {
-    root: tempfile::TempDir,
+    _home: tempfile::TempDir,
+    root: PathBuf,
 }
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        let fixture = Self {
-            root: tempfile::tempdir().unwrap(),
-        };
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("dynet-");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(std::fs::Permissions::from_mode(0o700));
+        }
+        #[cfg(windows)]
+        let home = builder
+            .tempdir_in(dynet_host::windows::data().unwrap())
+            .unwrap();
+        #[cfg(unix)]
+        let home = builder.tempdir().unwrap();
+        let root = home.path().canonicalize().unwrap().join("private");
+        dynet_api::control::Private::current()
+            .folder(&root)
+            .unwrap();
+        let fixture = Self { _home: home, root };
         std::fs::create_dir(fixture.seat()).unwrap();
-        std::fs::write(fixture.root.path().join("manifest"), MANIFEST).unwrap();
+        fixture.enroll();
         fixture
+    }
+
+    fn enroll(&self) {
+        use secrets::ExposeSecret;
+        let private = dynet_api::control::Private::current();
+        let root = self.root.as_path().canonicalize().unwrap();
+        private.folder(&root.join("state")).unwrap();
+        let identity = secrets::Identity::generate();
+        let signer = secrets::Signer::generate().unwrap();
+        let target = secrets::Target::new("fixture", "routing", "epoch1").unwrap();
+        let payload = serde_json::json!({"version":1,"manifest":serde_json::from_str::<Value>(MANIFEST).unwrap(),"upstream":"1.1.1.1","retain":86400});
+        let envelope = secrets::Envelope::seal(
+            target.clone(),
+            1,
+            &serde_json::to_vec(&payload).unwrap(),
+            (&identity.recipient(), &signer),
+        )
+        .unwrap();
+        private
+            .create(
+                &root.join("identity"),
+                identity.export().expose_secret().as_bytes(),
+            )
+            .unwrap();
+        private.create(&root.join("envelope"), &envelope).unwrap();
+        let bootstrap = serde_json::json!({"version":1,"target":target,"identityRef":root.join("identity"),"publisher":signer.publisher().unwrap().to_string(),"minimum":1,"source":{"kind":"file","path":root.join("envelope")}});
+        private
+            .create(
+                &root.join("bootstrap"),
+                &serde_json::to_vec(&bootstrap).unwrap(),
+            )
+            .unwrap();
     }
 
     pub(super) fn seat(&self) -> PathBuf {
         self.root
-            .path()
+            .as_path()
             .join(if cfg!(windows) { "dynet" } else { ".dynet" })
     }
 
@@ -32,11 +80,14 @@ impl Fixture {
         let mut command = Command::new(env!("CARGO_BIN_EXE_dynet"));
         command
             .env_clear()
-            .env("HOME", self.root.path())
-            .env("USERPROFILE", self.root.path())
-            .env("LOCALAPPDATA", self.root.path())
-            .env("DYNET_STATE", self.root.path().join("state"))
-            .current_dir(self.root.path());
+            .env("HOME", self.root.as_path())
+            .env("USERPROFILE", self.root.as_path())
+            .env("LOCALAPPDATA", self.root.as_path())
+            .env(
+                "DYNET_STATE",
+                self.root.as_path().canonicalize().unwrap().join("state"),
+            )
+            .current_dir(self.root.as_path());
         match name {
             "doctor" | "up" | "down" | "standing" => {
                 command.args(["--instance", "private-instance", name]);
@@ -44,8 +95,14 @@ impl Fixture {
             "resolve" | "reach" | "spread" => {
                 command.args([
                     name,
-                    "--manifest",
-                    "manifest",
+                    "--bootstrap",
+                    self.root
+                        .as_path()
+                        .canonicalize()
+                        .unwrap()
+                        .join("bootstrap")
+                        .to_str()
+                        .unwrap(),
                     "--cluster",
                     "hk",
                     "--count",
@@ -55,19 +112,11 @@ impl Fixture {
                     command.args(["--name", "private-target.invalid"]);
                 }
             }
-            "exit" => {
-                command.args([
-                    "exit",
-                    "--seat",
-                    "private-seat",
-                    "--secret",
-                    "private-secret",
-                    "--target",
-                    "private-target.invalid",
-                ]);
+            "identity" => {
+                command.args(["identity", "--output", "private-secret-output"]);
             }
             "divert.unit" => {
-                command.args(["divert", "--manifest", "private-manifest", "--unit"]);
+                command.args(["divert", "--bootstrap", "private-bootstrap", "--unit"]);
             }
             _ => panic!("unknown fixture command"),
         }

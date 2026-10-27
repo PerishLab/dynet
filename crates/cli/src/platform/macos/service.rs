@@ -128,15 +128,9 @@ impl Registration<'_> {
                 "macOS service captures issued and held addresses",
             ));
         }
-        let source = errand.manifest.canonicalize().map_err(failed)?;
-        trusted(&source)?;
-        let metadata = source.metadata().map_err(failed)?;
-        if metadata.uid() != 0 || metadata.permissions().mode() & 0o077 != 0 {
-            return Err(Error::new(
-                "the service manifest must be root-owned and private (mode 600)",
-            ));
-        }
-        dynet_api::manifest::read(&source)?;
+        let source = std::path::absolute(&errand.bootstrap).map_err(failed)?;
+        let private = dynet_api::control::Private::machine();
+        dynet_api::control::Bootstrap::read(&source, private)?.inspect(private, self.0.mark())?;
         std::fs::create_dir_all(state.root()).map_err(failed)?;
         trusted(state.root())?;
         trusted(&state.root().canonicalize().map_err(failed)?)?;
@@ -172,7 +166,7 @@ impl Registration<'_> {
 
     fn unit(&self, stage: &Stage) -> Result<String, Error> {
         let program = program()?;
-        let manifest = std::path::absolute(&stage.errand.manifest).map_err(failed)?;
+        let bootstrap = std::path::absolute(&stage.errand.bootstrap).map_err(failed)?;
         let arguments = vec![
             program.to_string_lossy().into_owned(),
             "--instance".into(),
@@ -185,14 +179,10 @@ impl Registration<'_> {
             stage.state.root().to_string_lossy().into_owned(),
             "divert".into(),
             "--service".into(),
-            "--manifest".into(),
-            manifest.to_string_lossy().into_owned(),
-            "--upstream".into(),
-            stage.errand.upstream.clone(),
+            "--bootstrap".into(),
+            bootstrap.to_string_lossy().into_owned(),
             "--claim".into(),
             stage.errand.claim.clone(),
-            "--retain".into(),
-            stage.errand.retain.to_string(),
             "--seconds".into(),
             "0".into(),
         ];

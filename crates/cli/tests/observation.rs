@@ -30,7 +30,7 @@ fn buffered() {
         ("resolve", 0),
         ("reach", 0),
         ("spread", 1),
-        ("exit", 2),
+        ("identity", 2),
         ("divert.unit", 0),
     ] {
         let result = fixture.run(name);
@@ -51,7 +51,7 @@ fn buffered() {
         "resolve",
         "reach",
         "spread",
-        "exit",
+        "identity",
         "divert.unit",
     ] {
         assert!(
@@ -87,7 +87,7 @@ fn buffered() {
         "private-uuid",
         "private-secret",
         "private-target",
-        "private-manifest",
+        "private-bootstrap",
         "127.0.0.1",
     ] {
         assert!(!text.contains(private));
@@ -110,7 +110,7 @@ fn isolated() {
         assert!(!result.stderr.is_empty());
         assert!(!String::from_utf8_lossy(&result.stderr).contains("private-setting"));
         assert_eq!(fixture.run("spread").status.code(), Some(1));
-        assert_eq!(fixture.run("exit").status.code(), Some(2));
+        assert_eq!(fixture.run("identity").status.code(), Some(2));
     }
     let blocked = Fixture::new();
     blocked.configure(ENABLED);
@@ -131,7 +131,7 @@ fn parity() {
         "resolve",
         "reach",
         "spread",
-        "exit",
+        "identity",
         "divert.unit",
     ];
     let fixture = Fixture::new();

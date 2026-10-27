@@ -10,7 +10,7 @@ mod vmess;
 
 pub use bond::{marked, reach};
 pub use book::Book;
-pub use parts::{Egress, Exit, Front, Ingress, Listener, Passage, Speaker};
+pub use parts::{Circuit, Egress, Exit, Fence, Front, Ingress, Listener, Passage, Speaker};
 pub use shadow::{Cloak, Shroud, veil};
 pub use spread::{PROBE, Roster, Run, Trial};
 pub use vless::Reality;

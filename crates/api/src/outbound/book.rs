@@ -31,6 +31,12 @@ pub struct Book {
 }
 
 impl Book {
+    pub fn clear(&self) {
+        if let Ok(mut held) = self.known.lock() {
+            held.clear();
+        }
+    }
+
     pub fn new(mark: u32) -> Self {
         Self {
             known: Arc::default(),

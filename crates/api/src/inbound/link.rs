@@ -1,5 +1,6 @@
-use crate::outbound::{Listener, Passage, Speaker};
+use crate::outbound::{Circuit, Listener, Passage, Speaker};
 use dynet_core::{Fault, Verdict};
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel, sync_channel};
 use std::thread;
 use std::time::Duration;
@@ -24,6 +25,7 @@ pub struct Link {
     upward: Option<SyncSender<Vec<u8>>>,
     downward: Receiver<Vec<u8>>,
     told: Receiver<Verdict>,
+    circuit: Option<Arc<Circuit>>,
 }
 
 impl Link {
@@ -39,6 +41,7 @@ impl Link {
         let (upward, outgoing) = sync_channel(DEPTH);
         let (incoming, downward) = sync_channel(DEPTH);
         let (spoken, told) = channel();
+        let circuit = passage.circuit();
         let errand = Errand {
             passage,
             target,
@@ -51,6 +54,7 @@ impl Link {
             upward: Some(upward),
             downward,
             told,
+            circuit,
         }
     }
 
@@ -59,10 +63,33 @@ impl Link {
     }
 
     pub fn bide(&self, patience: Duration) -> Taken {
-        match self.downward.recv_timeout(patience) {
+        if self.closed() {
+            return Taken::Spent;
+        }
+        match self
+            .downward
+            .recv_timeout(patience.min(Duration::from_millis(200)))
+        {
             Ok(body) => Taken::Body(body),
             Err(RecvTimeoutError::Timeout) => Taken::Empty,
             Err(RecvTimeoutError::Disconnected) => Taken::Spent,
+        }
+    }
+
+    pub fn circuit(&self) -> Option<Arc<Circuit>> {
+        self.circuit.clone()
+    }
+
+    pub fn closed(&self) -> bool {
+        self.circuit
+            .as_ref()
+            .is_some_and(|circuit| circuit.closed())
+    }
+
+    pub fn allow(&self, action: impl FnOnce() -> bool) -> bool {
+        match &self.circuit {
+            Some(circuit) => circuit.allow(action).unwrap_or(false),
+            None => action(),
         }
     }
 

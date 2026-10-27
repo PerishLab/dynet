@@ -25,4 +25,5 @@ signal-hook.workspace = true
 dynet-host.workspace = true
 
 [dev-dependencies]
+secrets.workspace = true
 tempfile.workspace = true

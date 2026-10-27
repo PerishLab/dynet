@@ -1,7 +1,6 @@
 use crate::outbound::{Front, Roster};
 use dynet_core::{Declared, Error, Form, Manifest};
 use std::collections::BTreeMap;
-use std::path::Path;
 
 const CIPHER: &str = "2022-blake3-aes-128-gcm";
 const RENAMED: [(&str, &str); 4] = [
@@ -11,7 +10,7 @@ const RENAMED: [(&str, &str); 4] = [
     ("method", "cipher"),
 ];
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Entry {
     fields: BTreeMap<String, String>,
 }
@@ -44,12 +43,6 @@ impl Loaded {
     pub fn entries(&self) -> &[Entry] {
         &self.entries
     }
-}
-
-pub fn read(path: &Path) -> Result<Loaded, Error> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| Error::new(format!("cannot read {}: {error}", path.display())))?;
-    load(&text)
 }
 
 pub fn load(text: &str) -> Result<Loaded, Error> {
@@ -125,5 +118,11 @@ fn exited(manifest: &Manifest, label: &str) -> Result<(), Error> {
         _ => Err(Error::new(format!(
             "exit {label} must speak shadowsocks with {CIPHER}"
         ))),
+    }
+}
+
+impl std::fmt::Debug for Entry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Entry([redacted])")
     }
 }

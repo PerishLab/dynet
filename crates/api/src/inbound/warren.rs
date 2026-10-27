@@ -1,15 +1,15 @@
 use super::store::Store;
 use super::warden;
+use crate::control::{Control, Payload, Projection};
 use crate::host::Journal;
-use crate::manifest::{self, Loaded};
-use crate::outbound::{Book, Passage, Roster};
+use crate::manifest::Loaded;
+use crate::outbound::{Book, Circuit, Fence, Passage, Roster};
 use dynet_core::{
     Bearing, Cluster, Decision, Domain, Error, Form, Instance, Label, Ledger, Name, Policy,
     Selector, Sight, Verdict, decide, usable,
 };
 use std::collections::HashMap;
 use std::net::UdpSocket;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -42,28 +42,44 @@ pub struct Chosen {
     pub passage: Passage,
 }
 
+pub struct Selection {
+    held: Arc<Held>,
+    circuit: Arc<Circuit>,
+}
+
 pub struct Held {
     pub loaded: Loaded,
     pub pools: Pools,
+    pub upstream: String,
+    pub retain: u64,
+    pub paused: bool,
+    pub stamp: String,
+    pub fence: Arc<Fence>,
 }
 
 pub struct Warren<'a> {
     pub instance: &'a Instance,
+    pub initial: &'a secrets::Assignment,
     pub held: &'a RwLock<Arc<Held>>,
     pub ledger: &'a Mutex<Ledger>,
     pub journal: &'a Journal,
-    pub source: &'a Path,
+    pub control: &'a Control,
+    pub projection: &'a dyn Projection,
     pub reload: &'a AtomicBool,
     pub halt: &'a AtomicBool,
     pub port: u16,
-    pub upstream: &'a str,
     pub book: &'a Book,
     pub store: &'a Store,
     pub told: &'a (dyn Fn(&str) + Sync),
 }
 
 impl Held {
-    pub fn new(loaded: Loaded, earlier: Option<&Self>) -> Result<Self, Error> {
+    pub fn new(payload: Payload, earlier: Option<&Self>) -> Result<Self, Error> {
+        let Payload {
+            loaded,
+            upstream,
+            retain,
+        } = payload;
         let policy = Policy::new(HALF, FLOOR)?;
         let now = Instant::now();
         let mut pools = Pools::new();
@@ -75,7 +91,18 @@ impl Held {
             let selector = kept.unwrap_or_else(|| Selector::new(cluster, policy, now));
             pools.insert(cluster.name().clone(), Mutex::new(selector));
         }
-        Ok(Self { loaded, pools })
+        let fence = earlier
+            .filter(|held| !held.paused && !held.fence.closed())
+            .map_or_else(|| Arc::new(Fence::new()), |held| Arc::clone(&held.fence));
+        Ok(Self {
+            loaded,
+            pools,
+            upstream: upstream.to_string(),
+            retain,
+            paused: false,
+            stamp: String::new(),
+            fence,
+        })
     }
 
     fn kept(&self, cluster: &Cluster) -> Option<Selector> {
@@ -103,10 +130,20 @@ impl Warren<'_> {
         }
     }
 
-    pub fn decide(&self, sight: &Sight) -> Option<Decision> {
-        let held = self.current();
+    pub fn decide(&self, sight: &Sight) -> Option<(Decision, Selection)> {
         let ledger = self.ledger.lock().ok()?;
-        Some(decide(held.loaded.manifest(), &ledger, sight))
+        let selection = self.selection()?;
+        let decision = decide(selection.held.loaded.manifest(), &ledger, sight);
+        Some((decision, selection))
+    }
+
+    fn selection(&self) -> Option<Selection> {
+        let held = self.current();
+        if held.paused {
+            return None;
+        }
+        let circuit = held.fence.ticket().ok()?;
+        Some(Selection { held, circuit })
     }
 
     pub fn claimed(&self, domain: &Domain) -> Option<Name> {
@@ -115,7 +152,11 @@ impl Warren<'_> {
     }
 
     pub fn passage(&self, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
-        let held = self.current();
+        self.pick(self.selection()?, wanted, bearing)
+    }
+
+    pub fn pick(&self, selection: Selection, wanted: &Name, bearing: Bearing) -> Option<Chosen> {
+        let Selection { held, circuit } = selection;
         usable(held.loaded.manifest(), wanted, bearing).ok()?;
         let cluster = held.loaded.manifest().pool(wanted)?;
         let roster = Roster::new(held.loaded.entries(), self.instance.mark());
@@ -125,7 +166,7 @@ impl Warren<'_> {
             Form::Alias(_) => return None,
         };
         let label = chosen(&held.pools, front, bearing)?;
-        let endpoint = roster.posted(&label, self.book, self.upstream).ok()?;
+        let endpoint = roster.posted(&label, self.book, &held.upstream).ok()?;
         let charge = Some(Charge {
             cluster: front.clone(),
             label: label.clone(),
@@ -135,51 +176,26 @@ impl Warren<'_> {
             return Some(Chosen {
                 charge,
                 told: label.get().to_string(),
-                passage: Passage::Plain(endpoint),
+                passage: Passage::Plain(endpoint).gated(circuit),
             });
         };
         Some(Chosen {
             charge,
             told: format!("{} through {}", exit.get(), label.get()),
-            passage: Passage::Veiled(endpoint, roster.exit(exit).ok()?),
+            passage: Passage::Veiled(endpoint, roster.exit(exit).ok()?).gated(circuit),
         })
     }
 
-    pub fn direct(&self) -> Chosen {
-        Chosen {
+    pub fn direct(&self, selection: Selection) -> Option<Chosen> {
+        let circuit = selection.circuit;
+        if circuit.closed() {
+            return None;
+        }
+        Some(Chosen {
             charge: None,
             told: "direct".to_string(),
-            passage: Passage::Direct(self.instance.mark()),
-        }
-    }
-
-    pub fn renew(&self) {
-        let loaded = match manifest::read(self.source) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                (self.told)(&format!(
-                    "manifest refused, the standing one is kept: {error}"
-                ));
-                return;
-            }
-        };
-        let standing = self.current();
-        let held = match Held::new(loaded, Some(&standing)) {
-            Ok(held) => held,
-            Err(error) => {
-                (self.told)(&format!(
-                    "manifest refused, the standing one is kept: {error}"
-                ));
-                return;
-            }
-        };
-        let count = held.loaded.manifest().table().rules().len();
-        match self.held.write() {
-            Ok(mut slot) => *slot = Arc::new(held),
-            Err(poisoned) => *poisoned.into_inner() = Arc::new(held),
-        }
-        (self.told)(&format!("manifest replaced, {count} rules standing"));
-        self.rejudged();
+            passage: Passage::Direct(self.instance.mark()).gated(circuit),
+        })
     }
 }
 
