@@ -5,6 +5,10 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::time::Duration;
 
 const CONTROL: i32 = 2;
+const MTU: libc::c_ulong = 0xc0000000
+    | ((std::mem::size_of::<libc::ifreq>() as libc::c_ulong) << 16)
+    | ((b'i' as libc::c_ulong) << 8)
+    | 51;
 
 pub fn name(instance: &str) -> String {
     let hash = instance.bytes().fold(2166136261u32, |held, byte| {
@@ -39,11 +43,8 @@ impl Device {
         let unit: u32 = name[4..]
             .parse()
             .map_err(|_| Error::other("invalid utun unit"))?;
-        let fd = unsafe { libc::socket(libc::PF_SYSTEM, libc::SOCK_DGRAM, CONTROL) };
-        if fd < 0 {
-            return Err(Error::last_os_error());
-        }
-        let file = unsafe { File::from_raw_fd(fd) };
+        let file = socket(libc::PF_SYSTEM, CONTROL)?;
+        let fd = file.as_raw_fd();
         let mut info: libc::ctl_info = unsafe { std::mem::zeroed() };
         for (slot, byte) in info.ctl_name.iter_mut().zip(b"com.apple.net.utun_control") {
             *slot = *byte as libc::c_char;
@@ -103,7 +104,16 @@ impl Device {
     }
 
     pub(super) fn mtu(&self) -> Result<u32> {
-        Ok(1400)
+        let socket = socket(libc::AF_INET, 0)?;
+        let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
+        for (slot, byte) in request.ifr_name.iter_mut().zip(self.name.as_bytes()) {
+            *slot = *byte as libc::c_char;
+        }
+        if unsafe { libc::ioctl(socket.as_raw_fd(), MTU, &mut request) } < 0 {
+            return Err(Error::last_os_error());
+        }
+        u32::try_from(unsafe { request.ifr_ifru.ifru_mtu })
+            .map_err(|_| Error::other("the interface returned a negative MTU"))
     }
 
     pub(super) fn receive(&self, room: &mut [u8]) -> Result<Option<usize>> {
@@ -148,4 +158,16 @@ impl Device {
             false => Ok(()),
         }
     }
+}
+
+fn socket(domain: i32, protocol: i32) -> Result<File> {
+    let fd = unsafe { libc::socket(domain, libc::SOCK_DGRAM, protocol) };
+    if fd < 0 {
+        return Err(Error::last_os_error());
+    }
+    let file = unsafe { File::from_raw_fd(fd) };
+    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err(Error::last_os_error());
+    }
+    Ok(file)
 }
