@@ -26,3 +26,25 @@ Windows supports this host's IPv4 traffic. Claimed names receive no AAAA or
 HTTPS/SVCB hints; unclaimed names retain their upstream answers. Applications
 must use system DNS: arbitrary application DoH and externally acquired IPv6
 addresses are outside the current capture boundary.
+
+On macOS Apple Silicon, install machine binaries with the manager's explicit
+version root `/Library/Dynet/versions` and bin root `/Library/Dynet/bin`.
+Keep the manifest root-owned and mode 600, then use the installed executable:
+
+```sh
+sudo /Library/Dynet/bin/dynet service install --manifest "/Library/Application Support/Dynet/manifest.json"
+sudo /Library/Dynet/bin/dynet doctor
+sudo /Library/Dynet/bin/dynet standing
+sudo /Library/Dynet/bin/dynet service restart
+sudo /Library/Dynet/bin/dynet service stop
+sudo /Library/Dynet/bin/dynet service start
+sudo /Library/Dynet/bin/dynet service uninstall
+```
+
+The LaunchDaemon starts at boot and restarts failures. State and the service
+log live under `/Library/Application Support/Dynet`; `--state` selects one
+absolute alternative. Explicit stop/down restores owned DNS settings and
+removes capture protection. A killed worker retains PF protection for ordinary
+user applications until recovery or explicit teardown. Root-owned sockets
+are exempt, because macOS PF identifies users rather than executable paths.
+Chained UDP and arbitrary application DoH are outside this capture boundary.

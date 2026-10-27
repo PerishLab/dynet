@@ -44,7 +44,17 @@ impl State {
         })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    fn defaulted() -> Result<Self, Error> {
+        let root = super::macos::kept();
+        Ok(Self {
+            runtime: root.join("run"),
+            root,
+            explicit: false,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
     fn defaulted() -> Result<Self, Error> {
         Ok(Self {
             root: super::linux::kept(),

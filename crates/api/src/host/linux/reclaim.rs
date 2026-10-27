@@ -1,23 +1,11 @@
 use super::{Link, Route, Veil};
+use crate::host::Cleared;
 use dynet_core::{Error, Instance};
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Cleared {
-    pub veil: bool,
-    pub route: bool,
-    pub link: bool,
-}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Stray {
     pub links: Vec<String>,
     pub veils: Vec<String>,
-}
-
-impl Cleared {
-    pub fn any(self) -> bool {
-        self.veil || self.route || self.link
-    }
 }
 
 pub fn reclaim(instance: &Instance) -> Result<Cleared, Error> {

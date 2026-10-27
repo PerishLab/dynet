@@ -24,6 +24,10 @@ syntax = "environment"
 paths = ["crates/api/src/host/windows/place.rs"]
 syntax = "environment"
 
+[[grant]]
+paths = ["crates/cli/src/platform/macos/service.rs"]
+syntax = "environment"
+
 [limit]
 block = 4
 fanout = 10

@@ -88,11 +88,23 @@ fn isolated() {
     assert!(root.join("run/dynet9.flushed").is_file());
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 #[test]
 fn defaults() {
     let state = dynet_api::host::State::new(None).expect("state");
     assert_eq!(state.root(), std::path::Path::new("/var/lib/dynet"));
     assert_eq!(state.runtime(), std::path::Path::new("/run/dynet"));
+    assert!(state.configured().is_none());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn defaults() {
+    let state = dynet_api::host::State::new(None).expect("native state");
+    assert_eq!(
+        state.root(),
+        std::path::Path::new("/Library/Application Support/Dynet")
+    );
+    assert_eq!(state.runtime(), state.root().join("run"));
     assert!(state.configured().is_none());
 }

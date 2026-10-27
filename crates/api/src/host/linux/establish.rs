@@ -1,20 +1,6 @@
-use super::{Cleared, Link, Route, Shape, Veil, reclaim, survey};
-use dynet_core::{Error, Instance, Span};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Standing {
-    pub cleared: Cleared,
-    pub veiled: bool,
-}
-
-pub struct Ground<'a> {
-    pub port: u16,
-    pub claim: &'a str,
-    pub span: Span,
-    pub bare: bool,
-    pub sources: &'a [String],
-    pub transit: u16,
-}
+use super::{Link, Route, Shape, Veil, reclaim, survey};
+use crate::host::{Ground, Standing};
+use dynet_core::{Error, Instance};
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
     let shape = survey()?;

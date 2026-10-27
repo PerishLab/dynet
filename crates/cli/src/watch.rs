@@ -38,7 +38,10 @@ pub struct Stage<'a> {
 
 pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     if stage.errand.unit {
+        #[cfg(not(target_os = "macos"))]
         print!("{}", unit(instance.get(), stage.errand, stage.state));
+        #[cfg(target_os = "macos")]
+        print!("{}", crate::platform::unit(instance, stage)?);
         return Ok(ExitCode::SUCCESS);
     }
     if stage.errand.service {
@@ -55,16 +58,16 @@ pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     Ok(recount(&served))
 }
 
-#[cfg(windows)]
 fn served(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
-    crate::windows::serve(instance, stage)
-}
-
-#[cfg(not(windows))]
-fn served(_: &Instance, _: &Stage) -> Result<ExitCode, Error> {
-    Err(Error::new(
-        "--service runs under the Windows Service Control Manager; here, install --unit",
-    ))
+    #[cfg(any(windows, target_os = "macos"))]
+    return crate::platform::serve(instance, stage);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (instance, stage);
+        Err(Error::new(
+            "--service runs under the native service manager; on Linux install --unit",
+        ))
+    }
 }
 
 pub fn carried(
@@ -118,6 +121,7 @@ pub fn recount(served: &inbound::Served) -> ExitCode {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn told(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
     let mut parts = vec![
         format!(
@@ -136,6 +140,7 @@ fn told(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
     parts.join(" ")
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
     let bare = match errand.bare {
         true => " --bare",
@@ -172,6 +177,7 @@ pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> Stri
     .join("\n")
 }
 
+#[cfg(not(target_os = "macos"))]
 fn located(state: &dynet_api::host::State) -> String {
     let Some(path) = state.configured() else {
         return String::new();

@@ -4,25 +4,21 @@ use clap::{Parser, Subcommand};
 use dynet_api::host;
 mod carry;
 mod flush;
-#[cfg(not(windows))]
-mod linux;
 mod node;
 mod observation;
+mod platform;
 mod watch;
-#[cfg(windows)]
-mod windows;
 
-#[cfg(not(windows))]
-use linux::Boundary;
-#[cfg(windows)]
-use windows::Boundary;
+use platform::Boundary;
+#[cfg(any(windows, target_os = "macos"))]
+use platform::Service;
 
 use dynet_api::outbound::PROBE;
 
 const WHOLE: &str = "0.0.0.0/0";
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const PORT: u16 = 15353;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const PORT: u16 = 53;
 use node::Aim;
 
@@ -36,7 +32,7 @@ use std::process::ExitCode;
     name = "dynet",
     version = plumb::version!("DYNET"),
     about = "Dynet command-line boundary",
-    after_help = "Short-command observation is disabled by default. Set [locus] enabled = true in config.toml under ~/.dynet on Unix or the LocalAppData known folder under dynet on Windows. Buffers use state/locus there. endpoint overrides LOCUS_API, then http://127.0.0.1:43308. Observation failures preserve output and exit status. Continuous divert initializes no observation engine; divert --unit observes only unit generation. Local state uses one --state or DYNET_STATE root, with runtime snapshots and flush communication in its run directory. Windows defaults to the ProgramData known folder under dynet; the service registration captures the resolved absolute root. Linux defaults remain /var/lib/dynet and /run/dynet."
+    after_help = "Short-command observation is disabled by default. Set [locus] enabled = true in config.toml under ~/.dynet on Unix or the LocalAppData known folder under dynet on Windows. Buffers use state/locus there. endpoint overrides LOCUS_API, then http://127.0.0.1:43308. Observation failures preserve output and exit status. Continuous divert initializes no observation engine; divert --unit observes only unit generation. Local state uses one --state or DYNET_STATE root, with runtime snapshots and flush communication in its run directory. Windows defaults to the ProgramData known folder under dynet; the service registration captures the resolved absolute root. macOS machine state defaults to /Library/Application Support/Dynet with runtime in run; service registration requires root-owned paths. Linux defaults remain /var/lib/dynet and /run/dynet."
 )]
 struct Cli {
     #[command(flatten)]
@@ -59,9 +55,9 @@ enum Command {
     Divert(watch::Errand),
     Carry(carry::Errand),
     Flush(flush::Errand),
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[command(subcommand)]
-    Service(windows::Service),
+    Service(Service),
     Resolve {
         #[arg(long)]
         manifest: PathBuf,
@@ -164,6 +160,8 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Config::layered(None, cli.told.partial()).map_err(|error| Error::new(error.to_string()))?;
     let instance = Instance::new(&config.instance)?;
     let state = host::State::new(config.state.clone())?;
+    #[cfg(target_os = "macos")]
+    host::macos::configure(state.root())?;
     match cli.command {
         Command::Doctor => Boundary(instance).doctor(&config),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
@@ -172,7 +170,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
         Command::Divert(errand) => watch::divert(&instance, &staged(&config, &errand, &state)?),
         Command::Carry(errand) => carry::carry(&errand),
         Command::Flush(errand) => flush::flush(&instance, &errand, &state),
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         Command::Service(service) => Boundary(instance).service(&config, &service, &state),
         Command::Resolve {
             manifest,
@@ -204,6 +202,12 @@ fn staged<'a>(
     errand: &'a watch::Errand,
     state: &'a host::State,
 ) -> Result<watch::Stage<'a>, Error> {
+    #[cfg(target_os = "macos")]
+    if !config.sources.is_empty() {
+        return Err(Error::new(
+            "macOS captures this host alone; forwarded sources refuse",
+        ));
+    }
     Ok(watch::Stage {
         errand,
         state,

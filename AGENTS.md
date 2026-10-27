@@ -377,10 +377,52 @@ application DoH or an IPv6 address acquired elsewhere is not made visible by
 NRPT or the IPv4 capture path. Do not claim that those paths are contained
 without independent evidence and an explicit deployment policy.
 
+## macOS
+
+Apple Silicon macOS uses a native utun control socket. The instance derives a
+stable utun unit; an occupied unit refuses rather than taking another owner's
+device. The packet device strips and supplies the four-byte network-order
+address-family header. The resolver seat has one owned loopback host route,
+removed on explicit teardown; the distinct utun peer carries rewritten replies.
+Host IPv4 routes capture only issued addresses and held
+prefixes. Own sockets bind the physical default interface with IP_BOUND_IF or
+IPV6_BOUND_IF; that interface is refreshed every five seconds.
+
+An instance owns one `com.apple/dynet-<instance>` PF anchor beneath the existing
+system wildcard. Root rules are never replaced. Its captured table is verified
+before routes and DNS answers. PF protection and the saved system DNS settings
+survive process death even though the kernel removes the dead utun and routes.
+Explicit service stop or down restores saved DNS only while it still matches
+Dynet's setting or the original value, removes only the instance anchor/table
+and releases only its PF enable reference. DNS changes made by another owner
+refuse restoration rather than being overwritten. A missing system wildcard
+refuses startup.
+
+PF exposes socket user identity rather than Windows executable identity. The
+root service's own physically bound streams and datagrams are exempt; this
+also exempts other root-owned sockets. Protection is verified for ordinary
+user applications and does not claim to confine root processes. The resolver
+seat remains blocked off-tunnel even for root. Claimed names suppress IPv6
+and HTTPS/SVCB hints as on Windows. Application DoH, separately acquired IPv6,
+forwarded capture, transparent seats, bare capture and chained UDP remain
+outside this macOS implementation.
+
+State defaults to `/Library/Application Support/Dynet`, with runtime files in
+`run`. One absolute --state root covers ledger, log, runtime, DNS restoration
+and PF reference state; launchd captures that root and the actual executable.
+The operator installs machine program/version seats explicitly under
+`/Library/Dynet/bin` and `/Library/Dynet/versions` through the shared manager.
+The root LaunchDaemon refuses a user-writable executable or ancestor and
+requires a root-owned private manifest. It starts at boot and restarts failures
+after launchd's five-second throttle. The worker retains protection when it
+receives a stop or shutdown signal; explicit service stop/down performs the
+teardown after unloading it. Uninstall also removes its owned property list.
+Service logs contain events rather than protocol material.
+
 ## Release
 
 `plumb.toml` declares the product `dynet`, its authority and the one binary
-`dynet` for Linux GNU and Windows MSVC on x86-64; nothing else publishes. The workspace declares
+`dynet` for Linux GNU and Windows MSVC on x86-64 and macOS on Apple Silicon; nothing else publishes. The workspace declares
 version `0.0.0`, and `crates/cli` carries the release identity region through
 `plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
 release follows Plumb's lifecycle (`plumb release --help`); wharf publishes it.
