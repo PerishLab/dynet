@@ -13,7 +13,7 @@ pub(super) use roll::Held;
 use roll::Roll;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,37 @@ const REST: Duration = Duration::from_millis(5);
 const SWEEP: Duration = Duration::from_secs(30);
 const HEED: Duration = Duration::from_secs(1);
 const CROWD: usize = 256;
+
+pub(super) struct Budget {
+    active: AtomicUsize,
+    limit: usize,
+}
+
+pub(super) struct Permit<'a>(&'a Budget);
+
+impl Budget {
+    pub(super) fn new(limit: usize) -> Self {
+        Self {
+            active: AtomicUsize::new(0),
+            limit,
+        }
+    }
+
+    pub(super) fn enter(&self) -> Option<Permit<'_>> {
+        self.active
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
+                (active < self.limit).then_some(active + 1)
+            })
+            .ok()
+            .map(|_| Permit(self))
+    }
+}
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        self.0.active.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 pub struct Divert<'a> {
     pub(super) span: Span,
@@ -32,9 +63,12 @@ pub struct Divert<'a> {
     pub(super) warren: &'a Warren<'a>,
     pub(super) served: Mutex<Served>,
     pub(super) shy: Mutex<std::collections::HashMap<SocketAddrV4, usize>>,
+    pub(super) budget: Budget,
 }
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
+    let limit = dynet_host::forwarding_capacity()
+        .map_err(|error| Error::new(format!("cannot budget forwarding resources: {error}")))?;
     let (span, patience, transit) = ground;
     let stage::Seats {
         device,
@@ -53,6 +87,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         .map_err(|error| Error::new(format!("cannot read the datagram seat: {error}")))?
         .port();
     (warren.told)(&format!("diverting to {}:{seat} and :{dart}", span.seat()));
+    (warren.told)(&format!("forwarding capacity {limit} concurrent sessions"));
     let divert = Divert {
         span,
         seat,
@@ -63,6 +98,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         warren,
         served: Mutex::new(Served::default()),
         shy: Mutex::new(std::collections::HashMap::new()),
+        budget: Budget::new(limit),
     };
     let ushered = match transit {
         0 => None,
@@ -216,6 +252,12 @@ impl Divert<'_> {
         }
     }
 
+    pub(super) fn begin(&self, spare: u16) {
+        if let Ok(mut book) = self.book.lock() {
+            book.begin(spare);
+        }
+    }
+
     fn glean(&self, started: Instant) {
         super::standing::record(self.warren, &self.warren.current().pools, started);
         let Ok(mut book) = self.book.lock() else {
@@ -234,6 +276,11 @@ impl Divert<'_> {
         if gone > 0 {
             (self.told())(&format!("released {gone} sessions, {standing} standing"));
         }
+        (self.told())(&format!(
+            "forwarding active {}/{}, {standing} mappings",
+            self.budget.active.load(Ordering::Relaxed),
+            self.budget.limit,
+        ));
     }
 
     pub(super) fn tally(&self, act: impl FnOnce(&mut Served)) {
@@ -282,4 +329,33 @@ fn write(body: &mut [u8], seats: (Ipv4Addr, Ipv4Addr), told: (u16, u16, bool)) {
         }
     }
     packet.fill_checksum();
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::Budget;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn concurrent_admission_cannot_exceed_capacity_and_drop_returns_a_slot() {
+        let budget = Budget {
+            active: AtomicUsize::new(0),
+            limit: 3,
+        };
+        let barrier = std::sync::Barrier::new(16);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let barrier = &barrier;
+                let budget = &budget;
+                scope.spawn(move || {
+                    let permit = budget.enter();
+                    barrier.wait();
+                    assert!(budget.enter().is_none());
+                    barrier.wait();
+                    drop(permit);
+                });
+            }
+        });
+        assert!(budget.enter().is_some());
+    }
 }

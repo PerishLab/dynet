@@ -1,3 +1,4 @@
+use super::divert::Budget;
 use super::lasting;
 mod wire;
 use super::store::{Key, Recall};
@@ -33,10 +34,14 @@ pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(),
     let _ = socket.set_write_timeout(Some(REST));
     let post = Post { warren, socket };
     let started = Instant::now();
+    let budget = Budget::new(16);
     std::thread::scope(|scope| {
         while lasting(started, span) && !warren.halted() {
             let mut room = [0u8; ROOM];
             let Ok((size, peer)) = socket.recv_from(&mut room) else {
+                continue;
+            };
+            let Some(permit) = budget.enter() else {
                 continue;
             };
             let held = warren.current();
@@ -49,7 +54,11 @@ pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(),
                 stamp: held.stamp.clone(),
                 circuit,
             };
-            scope.spawn(|| post.answer(call));
+            let post = &post;
+            scope.spawn(move || {
+                let _permit = permit;
+                post.answer(call);
+            });
         }
     });
     Ok(())
