@@ -1312,21 +1312,22 @@ dependencies = [
 
 [[package]]
 name = "locus"
-version = "0.15.0"
+version = "0.15.1"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "666bef82ecb121b251f10a2838a8515fb65c6a0ee7caf9fab676bd58b1060000"
+checksum = "d03d587882825daffc721505103310ad6e2431180e380cb14f26eaded2c4499a"
 dependencies = [
  "getrandom 0.3.4",
  "locus-macro",
+ "radicula-lock",
  "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "locus-macro"
-version = "0.15.0"
+version = "0.15.1"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "c8a95acd43d814089456d147d0d4d98d52b78f0ac2e85e1f08d5b5ee57739548"
+checksum = "e9d419e45e3fa8e666f132145bc61005010f83468fb801e3cc2499fd97026be8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1524,9 +1525,9 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.109.0"
+version = "0.113.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "e4093e0734a880b97ea254e3432a245da593b1e301d729afede8c1149586cf40"
+checksum = "ac33c519dfa85a068e3dc9145ca78b1f4cd8f9718dbe14fbfa4eb7faa6fbb326"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1535,6 +1536,7 @@ dependencies = [
  "object",
  "pin-project-lite",
  "plumb-macro",
+ "radicula-lock",
  "semver",
  "serde",
  "serde_json",
@@ -1549,9 +1551,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.109.0"
+version = "0.113.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "b436b84807ab0de680e87e97dd0545b1bc45a0c98631630ab35e5aa71a825cdf"
+checksum = "a42df65f8af4dbe52162dd7cb9c7c80facdeaf8810880a7432013805994f381f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1910,9 +1912,9 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.2.0"
+version = "0.3.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "21715c6b9018d2f94a0985bc91e0b14248bfdcc9e1117968b2cb56a4913796ab"
+checksum = "f6ecaa985a0a3caa9ea50e81fd522060dbf47b3cc075a0cc63d6b90f045633d0"
 dependencies = [
  "age",
  "base64 0.22.1",
