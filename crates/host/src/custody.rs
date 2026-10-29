@@ -88,7 +88,7 @@ impl Private {
             Err(error) => return Err(error),
         };
         native::check(&file, self.machine, false)?;
-        file.try_lock().map_err(io::Error::other)?;
+        radicula_lock::attempt(&file, radicula_lock::Mode::Exclusive).map_err(io::Error::other)?;
         Ok(file)
     }
 
