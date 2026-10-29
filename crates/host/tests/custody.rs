@@ -35,10 +35,12 @@ fn ownership() {
     private.create(&path, b"key").unwrap();
     symlink(&path, home.join("alias")).unwrap();
     assert!(private.read(&home.join("alias"), 10).is_err());
+    assert!(private.lock(&home.join("alias")).is_err());
     symlink(&home, root.join("redirect")).unwrap();
     assert!(private.read(&root.join("redirect/key"), 10).is_err());
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert!(private.read(&path, 10).is_err());
+    assert!(private.lock(&path).is_err());
 }
 
 #[cfg(unix)]
@@ -54,6 +56,7 @@ fn ancestors() {
     private.create(&path, b"key").unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o777)).unwrap();
     assert!(private.read(&path, 10).is_err());
+    assert!(private.lock(&path).is_err());
 }
 
 fn temporary() -> tempfile::TempDir {
@@ -129,4 +132,54 @@ fn machine() {
     assert!(private.lock(&home.join("lock")).is_err());
     drop(locked);
     private.lock(&home.join("lock")).unwrap();
+}
+
+#[test]
+fn exclusive() {
+    let root = temporary();
+    let root = root.path().canonicalize().unwrap();
+    let private = Private::current();
+    let home = root.join("private");
+    private.folder(&home).unwrap();
+    let path = home.join("lock");
+    private.create(&path, b"caller bytes").unwrap();
+    let held = private.lock(&path).unwrap();
+    assert_eq!(probe(&path), 75);
+    drop(held);
+    assert_eq!(probe(&path), 0);
+    assert_eq!(private.read(&path, 32).unwrap(), b"caller bytes");
+    let held = private.lock(&path).unwrap();
+    assert_eq!(probe(&path), 75);
+    drop(held);
+    assert_eq!(probe(&path), 0);
+    assert!(path.is_file());
+    assert!(private.lock(&home.join("absent/lock")).is_err());
+    assert!(private.lock(std::path::Path::new("relative")).is_err());
+}
+
+fn probe(path: &std::path::Path) -> i32 {
+    std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "worker"])
+        .env("DYNET_LOCK_PROBE", path)
+        .status()
+        .unwrap()
+        .code()
+        .unwrap()
+}
+
+#[test]
+fn worker() {
+    let Some(path) = std::env::var_os("DYNET_LOCK_PROBE") else {
+        return;
+    };
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .unwrap();
+    match file.try_lock() {
+        Ok(()) => std::process::exit(0),
+        Err(std::fs::TryLockError::WouldBlock) => std::process::exit(75),
+        Err(error) => panic!("independent lock probe failed: {error}"),
+    }
 }

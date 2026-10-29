@@ -12,6 +12,7 @@ name = "dynet_host"
 path = "src/lib.rs"
 
 [dependencies]
+radicula-lock.workspace = true
 socket2.workspace = true
 
 [target.'cfg(unix)'.dependencies]

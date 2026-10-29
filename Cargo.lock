@@ -606,6 +606,7 @@ name = "dynet-host"
 version = "0.0.0"
 dependencies = [
  "libc",
+ "radicula-lock",
  "sha2 0.10.9",
  "socket2",
  "tempfile",
@@ -1659,6 +1660,12 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "radicula-lock"
+version = "0.4.0"
+source = "sparse+https://cargo.perish.uk/"
+checksum = "6701f0150336bc6ac71581b825409d6c90efcf4662c3ecb504a43412fcd9167a"
 
 [[package]]
 name = "rand"
