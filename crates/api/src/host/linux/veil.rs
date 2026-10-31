@@ -38,16 +38,20 @@ impl Veil {
         instance: &Instance,
         ground: (Span, u16, u16),
         sources: &[String],
+        local: bool,
     ) -> Result<(), Error> {
         let (span, port, transit) = ground;
         let name = instance.get();
         let mark = instance.mark();
         let seat = span.seat();
-        let mut rules = format!(
-            "table inet {name} {{\n  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n{}{}  }}\n",
-            capture(seat, port, ""),
-            homeward(name, transit)
-        );
+        let mut rules = format!("table inet {name} {{\n");
+        if local {
+            rules.push_str(&format!(
+                "  chain output {{\n    type nat hook output priority -100; policy accept;\n    meta mark {mark} accept\n{}{}  }}\n",
+                capture(seat, port, ""),
+                homeward(name, transit)
+            ));
+        }
         if !sources.is_empty() {
             let from = format!("ip saddr {{ {} }} ", sources.join(", "));
             rules.push_str(&format!(

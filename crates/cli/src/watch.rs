@@ -23,6 +23,7 @@ pub struct Errand {
 }
 
 pub struct Stage<'a> {
+    pub(crate) config: &'a crate::Config,
     pub errand: &'a Errand,
     pub state: &'a dynet_api::host::State,
     pub port: u16,
@@ -33,7 +34,7 @@ pub struct Stage<'a> {
 pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     if stage.errand.unit {
         #[cfg(not(target_os = "macos"))]
-        print!("{}", unit(instance.get(), stage.errand, stage.state));
+        print!("{}", unit(instance.get(), stage));
         #[cfg(target_os = "macos")]
         print!("{}", crate::platform::unit(instance, stage)?);
         return Ok(ExitCode::SUCCESS);
@@ -163,13 +164,15 @@ fn told(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> String {
+pub fn unit(name: &str, stage: &Stage) -> String {
+    let errand = stage.errand;
+    let state = stage.state;
     let bare = match errand.bare {
         true => " --bare",
         false => "",
     };
     let run = told(name, errand, state);
-    [
+    let mut lines = vec![
         "[Unit]".to_string(),
         format!("Description=Dynet on {name}"),
         "Wants=network-online.target".to_string(),
@@ -181,6 +184,15 @@ pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> Stri
         "StateDirectory=dynet".to_string(),
         "RuntimeDirectory=dynet".to_string(),
         "RuntimeDirectoryPreserve=yes".to_string(),
+    ];
+    if !stage.config.local {
+        lines.push("Environment=DYNET_LOCAL=false".to_string());
+        lines.push(format!(
+            "Environment=\"DYNET_SOURCES={}\"",
+            escaped(&stage.config.sources)
+        ));
+    }
+    lines.extend([
         format!("ExecStartPre=-/usr/local/bin/dynet --instance {name} down"),
         format!(
             "ExecStartPre=/usr/local/bin/dynet --instance {name} up --claim {}{bare}",
@@ -195,8 +207,8 @@ pub fn unit(name: &str, errand: &Errand, state: &dynet_api::host::State) -> Stri
         "[Install]".to_string(),
         "WantedBy=multi-user.target".to_string(),
         String::new(),
-    ]
-    .join("\n")
+    ]);
+    lines.join("\n")
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -204,14 +216,17 @@ fn located(state: &dynet_api::host::State) -> String {
     let Some(path) = state.configured() else {
         return String::new();
     };
-    let path = path
-        .to_string_lossy()
+    format!(" --state \"{}\"", escaped(&path.to_string_lossy()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn escaped(value: &str) -> String {
+    value
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('%', "%%")
         .replace('$', "$$")
         .replace('\n', "\\n")
         .replace('\r', "\\r")
-        .replace('\t', "\\t");
-    format!(" --state \"{path}\"")
+        .replace('\t', "\\t")
 }

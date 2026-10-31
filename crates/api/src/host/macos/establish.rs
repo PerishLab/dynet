@@ -3,6 +3,11 @@ use crate::host::{Cleared, Ground, Standing};
 use dynet_core::{Error, Instance};
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
+    if !ground.local {
+        return Err(Error::new(
+            "forwarded-only capture is offered on Linux alone",
+        ));
+    }
     if ground.port != 53 || ground.claim != "0.0.0.0/0" || ground.bare {
         return Err(Error::new(
             "macOS capture requires port 53, the issued/held route scope and PF protection",
