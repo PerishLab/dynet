@@ -5,6 +5,11 @@ use dynet_core::{Error, Instance};
 pub const PORT: u16 = 53;
 
 pub fn establish(instance: &Instance, ground: &Ground) -> Result<Standing, Error> {
+    if !ground.local {
+        return Err(Error::new(
+            "forwarded-only capture is offered on Linux alone",
+        ));
+    }
     if ground.port != PORT {
         return Err(Error::new(format!(
             "Windows sends names to the seat through NRPT, which reaches port {PORT} alone, not {}",

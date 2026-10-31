@@ -1,13 +1,17 @@
 use super::lasting;
+mod admission;
+mod call;
+#[cfg(test)]
+mod tests;
+use admission::Admission;
+use call::Call;
 mod wire;
 use super::store::{Key, Recall};
 use super::warren::{self, Warren};
 use crate::host::clock;
-use crate::outbound::Circuit;
 use crate::resolver::{self, Answer, Packet, Query};
 use dynet_core::{Bearing, Domain, Error, Name, Verdict};
-use std::net::{IpAddr, SocketAddr, UdpSocket};
-use std::sync::Arc;
+use std::net::{IpAddr, UdpSocket};
 use std::time::{Duration, Instant};
 use wire::{capture, spare, through};
 
@@ -15,13 +19,6 @@ const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
 const TRIES: usize = 3;
 const MARK: u16 = 0x7a7a;
-
-struct Call {
-    asked: Vec<u8>,
-    peer: SocketAddr,
-    stamp: String,
-    circuit: Arc<Circuit>,
-}
 
 struct Post<'a> {
     warren: &'a Warren<'a>,
@@ -33,6 +30,7 @@ pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(),
     let _ = socket.set_write_timeout(Some(REST));
     let post = Post { warren, socket };
     let started = Instant::now();
+    let admission = Admission::new();
     std::thread::scope(|scope| {
         while lasting(started, span) && !warren.halted() {
             let mut room = [0u8; ROOM];
@@ -40,16 +38,19 @@ pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(),
                 continue;
             };
             let held = warren.current();
-            let Ok(circuit) = held.fence.ticket() else {
+            let Ok(call) = Call::new(&held, room[..size].to_vec(), peer) else {
                 continue;
             };
-            let call = Call {
-                asked: room[..size].to_vec(),
-                peer,
-                stamp: held.stamp.clone(),
-                circuit,
+            let Some(permit) = admission.enter(&call) else {
+                let reply = Packet::new(&call.asked).failed(&call.query);
+                let _ = post.speak(&reply, &call);
+                continue;
             };
-            scope.spawn(|| post.answer(call));
+            let post = &post;
+            scope.spawn(move || {
+                let _permit = permit;
+                post.answer(call);
+            });
         }
     });
     Ok(())
@@ -66,12 +67,12 @@ impl Post<'_> {
 
     fn settle(&self, call: &Call) -> Result<String, Error> {
         let asking = Packet::new(&call.asked);
-        let query = asking.asked()?;
+        let query = &call.query;
         if query.hints() {
-            return self.limited(&asking, call, &query);
+            return self.limited(&asking, call, query);
         }
         let domain = Domain::new(&query.name)?;
-        let Some(cluster) = self.warren.claimed(&domain) else {
+        let Some(cluster) = &call.cluster else {
             let plain =
                 asking.relay(&self.warren.current().upstream, self.warren.instance.mark())?;
             self.speak(&plain, call)?;
@@ -89,22 +90,22 @@ impl Post<'_> {
         } = self.warren.store.recall(&key)
         {
             let found = resolver::read(&reply)?;
-            self.assure(&domain, &found, &cluster)?;
+            self.assure(&domain, &found, cluster)?;
             let mark = u16::from_be_bytes([call.asked[0], call.asked[1]]);
             self.speak(&resolver::renew(&reply, mark, aged)?, call)?;
             return self.after(&key, &domain, refresh);
         }
         let framed = asking.frame()?;
-        let (label, carried) = self.carry(&framed, &cluster)?;
+        let (label, carried) = self.carry(&framed, cluster)?;
         let Some(reply) = spare(&carried)? else {
-            self.speak(&asking.failed(&query), call)?;
+            self.speak(&asking.failed(query), call)?;
             return Ok(format!(
                 "{} through {label} answered reserved addresses alone, which are left out; failed",
                 query.name
             ));
         };
         let found = resolver::read(&reply)?;
-        let told = self.keep(&domain, &found, &cluster)?;
+        let told = self.keep(&domain, &found, cluster)?;
         self.remember(&key, &reply, &found);
         self.speak(&reply, call)?;
         Ok(format!(
@@ -115,7 +116,7 @@ impl Post<'_> {
     }
 
     fn limited(&self, asking: &Packet, call: &Call, query: &Query) -> Result<String, Error> {
-        if self.carried(&query.name) {
+        if call.cluster.is_some() {
             self.speak(&asking.barren(query), call)?;
             return Ok(format!(
                 "{} asked for type {}, answered none because this carries it",
@@ -128,13 +129,6 @@ impl Post<'_> {
             "{} asked for type {}, left to the upstream",
             query.name, query.kind
         ))
-    }
-
-    fn carried(&self, name: &str) -> bool {
-        let Ok(domain) = Domain::new(name) else {
-            return true;
-        };
-        self.warren.claimed(&domain).is_some()
     }
 
     fn after(&self, key: &Key, domain: &Domain, refresh: bool) -> Result<String, Error> {

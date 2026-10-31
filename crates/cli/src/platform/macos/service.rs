@@ -112,6 +112,7 @@ impl Registration<'_> {
     }
 
     fn install(&self, config: &Config, state: &host::State, errand: &Errand) -> Result<(), Error> {
+        config.validate()?;
         let program = program()?;
         trusted(&program)?;
         trusted(&program.canonicalize().map_err(failed)?)?;

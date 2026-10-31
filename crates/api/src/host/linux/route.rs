@@ -27,6 +27,7 @@ impl Route {
         instance: &Instance,
         span: Span,
         told: (&str, &[String], u16),
+        local: bool,
     ) -> Result<(), Error> {
         let (claim, sources, transit) = told;
         let name = instance.get();
@@ -48,7 +49,9 @@ impl Route {
                 "rule", "add", "fwmark", &mark, "priority", &spared, "table", "main",
             ],
         )?;
-        Self::divert(instance, claim, "lo")?;
+        if local {
+            Self::divert(instance, claim, "lo")?;
+        }
         for source in sources {
             Self::spare(instance, claim, source)?;
         }

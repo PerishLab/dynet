@@ -9,7 +9,10 @@ impl Boundary {
     #[locus::trace(with = plumb::observation::view())]
     pub(crate) fn doctor(&self, config: &Config) -> Result<ExitCode, Error> {
         let shape = host::survey()?;
-        println!("resolver: {}", shape.explain());
+        match config.local {
+            true => println!("resolver: {}", shape.explain()),
+            false => println!("resolver: host DNS is outside capture; no ownership required"),
+        }
         println!("instance {}: priority {}", self.0.get(), self.0.priority());
         println!("  device: {}", present(host::Link::present(&self.0)));
         println!("  veil: {}", present(host::Veil::raised(&self.0)));
@@ -28,7 +31,10 @@ impl Boundary {
             return Ok(ExitCode::from(1));
         }
         Ok(
-            match shape.ownable() && stray.links.is_empty() && stray.veils.is_empty() {
+            match (!config.local || shape.ownable())
+                && stray.links.is_empty()
+                && stray.veils.is_empty()
+            {
                 true => ExitCode::SUCCESS,
                 false => ExitCode::from(1),
             },
@@ -43,6 +49,7 @@ impl Boundary {
     ) -> Result<ExitCode, Error> {
         let sources = scoped(&config.sources);
         let ground = host::Ground {
+            local: config.local,
             port: config.port,
             claim,
             span: Span::new(&config.span)?,
@@ -55,7 +62,7 @@ impl Boundary {
             "up: reclaimed={} veiled={} capturing={} {}",
             standing.cleared.any(),
             standing.veiled,
-            spoken(&sources),
+            spoken(config.local, &sources),
             steered(config.transit, &sources)
         );
         Ok(ExitCode::SUCCESS)
@@ -94,7 +101,10 @@ fn scoped(told: &str) -> Vec<String> {
         .collect()
 }
 
-fn spoken(sources: &[String]) -> String {
+fn spoken(local: bool, sources: &[String]) -> String {
+    if !local {
+        return sources.join(", ");
+    }
     match sources.is_empty() {
         true => "this host".to_string(),
         false => format!("this host and {}", sources.join(", ")),
