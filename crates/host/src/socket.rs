@@ -1,23 +1,16 @@
 use socket2::Socket;
 
-pub fn capacity() -> std::io::Result<usize> {
+pub fn limit() -> std::io::Result<Option<u64>> {
     #[cfg(unix)]
     {
         let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
         if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } != 0 {
             return Err(std::io::Error::last_os_error());
         }
-        let limit = unsafe { limit.assume_init() }.rlim_cur;
-        let available = limit.saturating_sub(128) / 12;
-        if available == 0 {
-            return Err(std::io::Error::other(
-                "the file descriptor limit leaves no forwarding headroom",
-            ));
-        }
-        Ok(available.min(256) as usize)
+        Ok(Some(unsafe { limit.assume_init() }.rlim_cur))
     }
     #[cfg(not(unix))]
-    Ok(256)
+    Ok(None)
 }
 
 pub fn bind(socket: &Socket, mark: u32, six: bool) -> std::io::Result<()> {

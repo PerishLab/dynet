@@ -20,4 +20,4 @@ mod socket;
 
 pub use custody::Private;
 pub use device::{Device, ROOM};
-pub use socket::{bind, capacity};
+pub use socket::{bind, limit};

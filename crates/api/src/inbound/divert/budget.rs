@@ -1,3 +1,4 @@
+use dynet_core::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(in crate::inbound) struct Budget {
@@ -8,6 +9,21 @@ pub(in crate::inbound) struct Budget {
 pub(in crate::inbound) struct Permit<'a>(&'a Budget);
 
 impl Budget {
+    pub(super) fn capacity() -> Result<usize, Error> {
+        let limit = dynet_host::limit()
+            .map_err(|error| Error::new(format!("cannot budget forwarding resources: {error}")))?;
+        let Some(limit) = limit else {
+            return Ok(256);
+        };
+        let available = limit.saturating_sub(128) / 12;
+        if available == 0 {
+            return Err(Error::new(
+                "cannot budget forwarding resources: the file descriptor limit leaves no forwarding headroom",
+            ));
+        }
+        Ok(available.min(256) as usize)
+    }
+
     pub(in crate::inbound) fn new(limit: usize) -> Self {
         Self {
             active: AtomicUsize::new(0),
