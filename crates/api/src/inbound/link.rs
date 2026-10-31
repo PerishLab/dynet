@@ -38,6 +38,10 @@ impl Link {
     }
 
     fn start(passage: Passage, target: String, port: u16, bearing: bool) -> Self {
+        let passage = match passage.circuit() {
+            Some(_) => passage,
+            None => passage.gated(Arc::new(Circuit::new())),
+        };
         let (upward, outgoing) = sync_channel(DEPTH);
         let (incoming, downward) = sync_channel(DEPTH);
         let (spoken, told) = channel();
@@ -99,6 +103,14 @@ impl Link {
 
     pub fn verdict(&self) -> Option<Verdict> {
         self.told.try_recv().ok()
+    }
+}
+
+impl Drop for Link {
+    fn drop(&mut self) {
+        if let Some(circuit) = &self.circuit {
+            let _ = circuit.close();
+        }
     }
 }
 
