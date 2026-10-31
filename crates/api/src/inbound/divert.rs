@@ -41,8 +41,7 @@ pub struct Divert<'a> {
 }
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
-    let limit = dynet_host::capacity()
-        .map_err(|error| Error::new(format!("cannot budget forwarding resources: {error}")))?;
+    let limit = Budget::capacity()?;
     let (span, patience, transit) = ground;
     let stage::Seats {
         device,
