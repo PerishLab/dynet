@@ -237,7 +237,11 @@ are.
 
 - What Dynet captures is scoped by where the traffic came from, and the scope is
   configuration rather than an argument because it is a fact about the machine.
-  This host's own traffic is always captured; traffic forwarded from elsewhere
+  This host's own traffic is captured by default; Linux may set `DYNET_LOCAL=false`
+  to capture only declared forwarded sources, refusing an empty source scope.
+  That mode leaves local routes and output DNS outside capture and requires no
+  host resolver ownership; `DYNET_SOURCES` still names the forwarded scope.
+  Traffic forwarded from elsewhere
   is captured only from a declared source prefix, so a machine sitting on a
   network it does not own diverts nothing by accident. Configuration here means
   the environment, because nothing in this repository passes a file to the

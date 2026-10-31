@@ -103,6 +103,7 @@ pub(crate) struct Config {
     span: String,
     #[cascade(arg)]
     state: Option<PathBuf>,
+    local: bool,
     sources: String,
     transit: u16,
 }
@@ -114,9 +115,33 @@ impl Default for Config {
             port: PORT,
             span: host::PREFIX.to_string(),
             state: None,
+            local: true,
             sources: String::new(),
             transit: 0,
         }
+    }
+}
+
+impl Config {
+    fn validate(&self) -> Result<(), Error> {
+        if self.local {
+            return Ok(());
+        }
+        if !cfg!(target_os = "linux") {
+            return Err(Error::new(
+                "forwarded-only capture is offered on Linux alone",
+            ));
+        }
+        if self
+            .sources
+            .split(',')
+            .all(|source| source.trim().is_empty())
+        {
+            return Err(Error::new(
+                "forwarded-only capture requires declared sources",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -155,6 +180,9 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<ExitCode, Error> {
     let config =
         Config::layered(None, cli.told.partial()).map_err(|error| Error::new(error.to_string()))?;
+    if matches!(&cli.command, Command::Up { .. } | Command::Divert(_)) {
+        config.validate()?;
+    }
     let instance = Instance::new(&config.instance)?;
     let state = host::State::new(config.state.clone())?;
     #[cfg(target_os = "macos")]
@@ -208,7 +236,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
 }
 
 fn staged<'a>(
-    config: &Config,
+    config: &'a Config,
     errand: &'a watch::Errand,
     state: &'a host::State,
 ) -> Result<watch::Stage<'a>, Error> {
@@ -219,6 +247,7 @@ fn staged<'a>(
         ));
     }
     Ok(watch::Stage {
+        config,
         errand,
         state,
         port: config.port,

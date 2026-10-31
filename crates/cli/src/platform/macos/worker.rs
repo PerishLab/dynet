@@ -13,6 +13,7 @@ pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Erro
     }
     let told = |line: &str| println!("{} {line}", host::clock());
     let ground = host::Ground {
+        local: stage.config.local,
         port: stage.port,
         claim: &stage.errand.claim,
         span: stage.span,
