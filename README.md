@@ -55,3 +55,16 @@ removes capture protection. A killed worker retains PF protection for ordinary
 user applications until recovery or explicit teardown. Root-owned sockets
 are exempt, because macOS PF identifies users rather than executable paths.
 Chained UDP and arbitrary application DoH are outside this capture boundary.
+
+Forwarding admits at most 256 concurrent TCP/UDP sessions, reduced on Unix to
+leave 128 file descriptors free and budget 12 per admitted session. The service
+refuses startup if its descriptor limit leaves no forwarding capacity. DNS independently reserves 16 direct and 16 proxy requests;
+excess valid requests receive SERVFAIL without direct fallback. The session mapping table holds at most 4096 entries and
+reclaims handshakes that have not established a session after 30 seconds quiet.
+Active forwarding and mapping counts are logged every 30 seconds.
+
+An idle open TCP stream is retained. After either direction ends, the other
+direction may continue carrying data, but 30 seconds without traffic ends the
+half-closed session. Dropping the forwarding link shuts down its owned sockets
+so blocked outbound workers can leave. These limits address resource exhaustion;
+they do not establish that the macOS kernel PF deadlock is repaired (issue #68).

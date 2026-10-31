@@ -39,8 +39,15 @@ impl Divert<'_> {
                     std::thread::sleep(REST);
                     continue;
                 };
+                let Some(permit) = self.budget.enter() else {
+                    self.tally(|served| served.refused += 1);
+                    continue;
+                };
                 let _ = stream.set_nonblocking(false);
-                scope.spawn(|| self.admit(stream, transit));
+                scope.spawn(move || {
+                    let _permit = permit;
+                    self.admit(stream, transit);
+                });
             }
         });
     }

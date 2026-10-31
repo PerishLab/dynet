@@ -36,10 +36,24 @@ impl Divert<'_> {
                     std::thread::sleep(REST);
                     continue;
                 };
+                let Some(permit) = self.budget.enter() else {
+                    self.reject(stream);
+                    continue;
+                };
                 let _ = stream.set_nonblocking(false);
-                scope.spawn(|| self.serve(stream));
+                scope.spawn(move || {
+                    let _permit = permit;
+                    self.serve(stream);
+                });
             }
         });
+    }
+
+    fn reject(&self, stream: TcpStream) {
+        if let Ok(peer) = stream.peer_addr() {
+            self.end(peer.port());
+        }
+        self.tally(|served| served.refused += 1);
     }
 
     fn serve(&self, stream: TcpStream) {
@@ -49,6 +63,7 @@ impl Divert<'_> {
         let Some(held) = self.recall(peer.port()) else {
             return;
         };
+        self.begin(peer.port());
         self.tend(stream, held);
         self.end(peer.port());
     }
@@ -104,12 +119,20 @@ impl Divert<'_> {
                 if self.fed(held, peer.port(), body) {
                     continue;
                 }
+                let Some(permit) = self.budget.enter() else {
+                    self.end(peer.port());
+                    self.tally(|served| served.refused += 1);
+                    continue;
+                };
                 let Some((link, charge)) = self.open(peer, held) else {
                     self.end(peer.port());
                     continue;
                 };
                 feed(held, peer.port(), body);
-                scope.spawn(move || self.spill(link, charge, (darts, peer, held)));
+                scope.spawn(move || {
+                    let _permit = permit;
+                    self.spill(link, charge, (darts, peer, held));
+                });
             }
         });
     }
@@ -127,6 +150,7 @@ impl Divert<'_> {
 
     fn open(&self, peer: SocketAddr, held: &Flock) -> Option<(Link, Charge)> {
         let kept = self.recall(peer.port())?;
+        self.begin(peer.port());
         let Some(chosen) = self.choose(kept.target) else {
             self.tally(|served| served.refused += 1);
             return None;

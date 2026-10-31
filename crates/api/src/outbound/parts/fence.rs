@@ -67,6 +67,13 @@ impl Fence {
 }
 
 impl Circuit {
+    pub(crate) fn new() -> Self {
+        Self {
+            sockets: Mutex::new(Some(Vec::new())),
+            failed: AtomicBool::new(false),
+        }
+    }
+
     pub fn attach(&self, stream: TcpStream) -> Result<TcpStream, Error> {
         let mut guard = self.sockets.lock().map_err(|_| refused())?;
         let Some(sockets) = guard.as_mut() else {
@@ -92,7 +99,7 @@ impl Circuit {
             .map_or(true, |sockets| sockets.is_none())
     }
 
-    fn close(&self) -> Result<(), Error> {
+    pub(crate) fn close(&self) -> Result<(), Error> {
         let mut guard = self.sockets.lock().map_err(|_| refused())?;
         let mut failed = false;
         for socket in guard.take().unwrap_or_default() {
