@@ -20,6 +20,7 @@ pub struct Standing {
 }
 
 pub struct Ground<'a> {
+    pub local: bool,
     pub port: u16,
     pub claim: &'a str,
     pub span: Span,

@@ -52,6 +52,7 @@ fn work(instance: &Instance, stage: &Stage) -> u32 {
         }
     };
     let ground = host::Ground {
+        local: stage.config.local,
         port: stage.port,
         claim: &stage.errand.claim,
         span: stage.span,

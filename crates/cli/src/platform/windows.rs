@@ -44,6 +44,7 @@ impl Boundary {
         bare: bool,
     ) -> Result<ExitCode, Error> {
         let ground = host::Ground {
+            local: config.local,
             port: config.port,
             claim,
             span: Span::new(&config.span)?,
@@ -95,6 +96,7 @@ impl Boundary {
         errand: &Errand,
         state: &host::State,
     ) -> Result<ExitCode, Error> {
+        config.validate()?;
         if !config.sources.is_empty() || config.transit != 0 {
             return Err(Error::new(
                 "capturing forwarded traffic is not offered on Windows",

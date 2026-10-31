@@ -46,6 +46,7 @@ impl Boundary {
             .map(str::to_string)
             .collect();
         let ground = host::Ground {
+            local: config.local,
             port: config.port,
             claim,
             span: Span::new(&config.span)?,
