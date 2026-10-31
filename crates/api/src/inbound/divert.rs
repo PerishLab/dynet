@@ -1,4 +1,9 @@
+mod budget;
+pub(super) use budget::Budget;
+mod packet;
+use packet::{ends, write};
 mod peek;
+mod progress;
 mod roll;
 mod route;
 mod stage;
@@ -11,7 +16,7 @@ use dynet_core::{Error, Span};
 use dynet_host::{Device, ROOM};
 pub(super) use roll::Held;
 use roll::Roll;
-use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
+use smoltcp::wire::{IpProtocol, Ipv4Packet};
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
@@ -32,9 +37,12 @@ pub struct Divert<'a> {
     pub(super) warren: &'a Warren<'a>,
     pub(super) served: Mutex<Served>,
     pub(super) shy: Mutex<std::collections::HashMap<SocketAddrV4, usize>>,
+    pub(super) budget: Budget,
 }
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
+    let limit = dynet_host::capacity()
+        .map_err(|error| Error::new(format!("cannot budget forwarding resources: {error}")))?;
     let (span, patience, transit) = ground;
     let stage::Seats {
         device,
@@ -53,6 +61,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         .map_err(|error| Error::new(format!("cannot read the datagram seat: {error}")))?
         .port();
     (warren.told)(&format!("diverting to {}:{seat} and :{dart}", span.seat()));
+    (warren.told)(&format!("forwarding capacity {limit} concurrent sessions"));
     let divert = Divert {
         span,
         seat,
@@ -63,6 +72,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         warren,
         served: Mutex::new(Served::default()),
         shy: Mutex::new(std::collections::HashMap::new()),
+        budget: Budget::new(limit),
     };
     let ushered = match transit {
         0 => None,
@@ -216,6 +226,12 @@ impl Divert<'_> {
         }
     }
 
+    pub(super) fn begin(&self, spare: u16) {
+        if let Ok(mut book) = self.book.lock() {
+            book.begin(spare);
+        }
+    }
+
     fn glean(&self, started: Instant) {
         super::standing::record(self.warren, &self.warren.current().pools, started);
         let Ok(mut book) = self.book.lock() else {
@@ -234,6 +250,11 @@ impl Divert<'_> {
         if gone > 0 {
             (self.told())(&format!("released {gone} sessions, {standing} standing"));
         }
+        (self.told())(&format!(
+            "forwarding active {}/{}, {standing} mappings",
+            self.budget.active.load(Ordering::Relaxed),
+            self.budget.limit,
+        ));
     }
 
     pub(super) fn tally(&self, act: impl FnOnce(&mut Served)) {
@@ -249,37 +270,4 @@ impl Divert<'_> {
     pub(super) fn recall(&self, spare: u16) -> Option<Held> {
         self.book.lock().ok()?.recall(spare)
     }
-}
-
-fn ends(packet: &Ipv4Packet<&[u8]>, borne: bool) -> Option<(u16, u16)> {
-    if borne {
-        let dart = UdpPacket::new_checked(packet.payload()).ok()?;
-        return Some((dart.src_port(), dart.dst_port()));
-    }
-    let segment = TcpPacket::new_checked(packet.payload()).ok()?;
-    Some((segment.src_port(), segment.dst_port()))
-}
-
-fn write(body: &mut [u8], seats: (Ipv4Addr, Ipv4Addr), told: (u16, u16, bool)) {
-    let source = IpAddress::Ipv4(seats.0);
-    let target = IpAddress::Ipv4(seats.1);
-    let (ports, borne) = ((told.0, told.1), told.2);
-    let mut packet = Ipv4Packet::new_unchecked(body);
-    packet.set_src_addr(seats.0);
-    packet.set_dst_addr(seats.1);
-    match borne {
-        true => {
-            let mut dart = UdpPacket::new_unchecked(packet.payload_mut());
-            dart.set_src_port(ports.0);
-            dart.set_dst_port(ports.1);
-            dart.fill_checksum(&source, &target);
-        }
-        false => {
-            let mut segment = TcpPacket::new_unchecked(packet.payload_mut());
-            segment.set_src_port(ports.0);
-            segment.set_dst_port(ports.1);
-            segment.fill_checksum(&source, &target);
-        }
-    }
-    packet.fill_checksum();
 }
