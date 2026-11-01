@@ -1525,9 +1525,9 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.117.0"
+version = "0.119.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "241df07ae0363e25399d0a1d1f93fbea7d7556df861f714408fa169c1b9f22c8"
+checksum = "e2799cc57a1640817feb83bba7ae088a4ade96ac729af6463587327c165f1127"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1551,9 +1551,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.117.0"
+version = "0.119.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "cbf09b258bfa7142085fbe7033ce200b335ff1a7b28c27af94eabe30dbc050a7"
+checksum = "7f193d84ceac248c1269856b6b324310b64140584a61cf9005c4dbbc527924e6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1665,9 +1665,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "radicula-lock"
-version = "0.7.0"
+version = "0.8.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "b047e05098eb6062d29f26ad1f8ed0ef5e9f080d7788b7783802f81aa9e8f7d5"
+checksum = "215f4f2ad54ddbf3dd24664efb5e6867b72446673566e77a8b198c430178847b"
 
 [[package]]
 name = "rand"
