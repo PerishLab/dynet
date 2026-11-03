@@ -12,6 +12,7 @@ name = "dynet"
 path = "src/main.rs"
 
 [dependencies]
+radicula-config.workspace = true
 locus.workspace = true
 serde.workspace = true
 serde_json.workspace = true

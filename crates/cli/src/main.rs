@@ -24,7 +24,7 @@ const PORT: u16 = 53;
 use node::Aim;
 
 use dynet_core::{Error, Instance, Span};
-use plumb::config::Cascade;
+use radicula_config::Cascade;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -94,6 +94,7 @@ enum Command {
 }
 
 #[derive(Debug, Cascade)]
+#[plumb::config::prefix]
 pub(crate) struct Config {
     #[cascade(arg)]
     instance: String,
@@ -178,8 +179,13 @@ fn main() -> ExitCode {
 
 #[locus::trace(with = plumb::observation::view())]
 fn run(cli: Cli) -> Result<ExitCode, Error> {
-    let config =
-        Config::layered(None, cli.told.partial()).map_err(|error| Error::new(error.to_string()))?;
+    let config = Config::layered(
+        None,
+        &Config::prefix(),
+        &plumb::config::value,
+        cli.told.partial(),
+    )
+    .map_err(|error| Error::new(error.to_string()))?;
     if matches!(&cli.command, Command::Up { .. } | Command::Divert(_)) {
         config.validate()?;
     }
