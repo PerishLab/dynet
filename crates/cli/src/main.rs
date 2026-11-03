@@ -93,7 +93,7 @@ enum Command {
     },
 }
 
-#[derive(Debug, Cascade)]
+#[derive(Clone, Debug, Cascade)]
 #[plumb::config::prefix]
 pub(crate) struct Config {
     #[cascade(arg)]

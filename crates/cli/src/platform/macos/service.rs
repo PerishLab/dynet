@@ -138,6 +138,7 @@ impl Registration<'_> {
         std::fs::set_permissions(state.root(), std::fs::Permissions::from_mode(0o700))
             .map_err(failed)?;
         let stage = Stage {
+            config,
             errand,
             state,
             port: config.port,
