@@ -7,12 +7,14 @@ use std::sync::Mutex;
 
 pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     let instance = instance.clone();
+    let config = stage.config.clone();
     let errand = stage.errand.clone();
     let state = stage.state.clone();
     let (port, span) = (stage.port, stage.span);
     let name = instance.get().to_string();
     dynet_host::windows::serve(&name, move || {
         let stage = Stage {
+            config: &config,
             errand: &errand,
             state: &state,
             port,
