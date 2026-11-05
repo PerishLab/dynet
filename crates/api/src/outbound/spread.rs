@@ -1,4 +1,4 @@
-use super::{Endpoint, Front, Tunnel};
+use super::{Front, Ingress};
 use crate::manifest::Entry;
 use dynet_core::{Bearing, Cluster, Error, Fault, Label, Name, Policy, Selector, Verdict};
 use std::collections::BTreeSet;
@@ -143,18 +143,17 @@ impl<'a> Roster<'a> {
         }
     }
 
-    fn reach(&self, label: &Label) -> Result<Tunnel, Outcome> {
-        let endpoint = self
+    fn reach(&self, label: &Label) -> Result<Ingress, Outcome> {
+        let front = self
             .board(label)
             .map_err(|error| stumble(Fault::Reach, &error))?;
-        let mut tunnel = Tunnel::dial(&endpoint).map_err(|error| stumble(Fault::Reach, &error))?;
-        tunnel
-            .board(&endpoint, &self.target, 80)
-            .map_err(|error| stumble(Fault::Handshake, &error))?;
-        tunnel
+        let (mut egress, ingress) = front
+            .board(&self.target, 80)
+            .map_err(|fault| Outcome::Faulted(fault, format!("the front refused at {fault:?}")))?;
+        egress
             .send(ASK.as_bytes())
             .map_err(|error| stumble(Fault::Severed, &error))?;
-        Ok(tunnel)
+        Ok(ingress)
     }
 
     pub fn posted(
@@ -204,16 +203,14 @@ impl<'a> Roster<'a> {
             .ok_or_else(|| Error::new(format!("no node named {}", label.get())))
     }
 
-    pub fn board(&self, label: &Label) -> Result<Endpoint, Error> {
+    pub fn board(&self, label: &Label) -> Result<Front, Error> {
         let entry = self.seat(label)?;
-        Endpoint::new(
+        Front::read(
+            entry,
             entry
                 .field("server")
-                .ok_or_else(|| Error::new("no server"))?,
-            port(entry)?,
-            entry
-                .field("uuid")
-                .ok_or_else(|| Error::new("no identity"))?,
+                .ok_or_else(|| Error::new("no server"))?
+                .to_string(),
             self.mark,
         )
     }
@@ -245,7 +242,7 @@ fn judge(outcome: Outcome) -> (Verdict, Option<String>, Option<String>) {
     }
 }
 
-fn collect(tunnel: &mut Tunnel) -> Outcome {
+fn collect(tunnel: &mut Ingress) -> Outcome {
     let mut answer = Vec::new();
     while answer.len() < CEILING {
         match tunnel.receive() {

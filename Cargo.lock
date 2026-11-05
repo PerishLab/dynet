@@ -670,7 +670,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1537,9 +1537,9 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.131.0"
+version = "0.132.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "91383fe1c6916b849699556bc3a761431f7d26c79c4c5a3318b38bfc7dec8c00"
+checksum = "e7603cca8127d3821325211b6dc64c36b3e1a9decf5e1fe3a66e381800912170"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1549,6 +1549,7 @@ dependencies = [
  "pin-project-lite",
  "plumb-macro",
  "radicula-config",
+ "radicula-context",
  "radicula-git",
  "radicula-lock",
  "radicula-process",
@@ -1565,9 +1566,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.131.0"
+version = "0.132.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "6a6eba95b4193f2663ffef29312a32dea8b65710deef3f3578d8ff2f944a43a8"
+checksum = "b218363ab76f9d4a8184d3a069a0bb49bcea594b5d33443b386104584ff21838"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1707,6 +1708,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "radicula-context"
+version = "0.12.0"
+source = "sparse+https://cargo.perish.uk/"
+checksum = "301f4d667d8d5f3b9754c5c70d4b33cc211600395c7449ad04129b39fda6be57"
+dependencies = [
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -1867,7 +1877,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1976,9 +1986,9 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.4.0"
+version = "0.5.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "8f5b7b51779037c4450aa1ad8eab204f50552f9bf23e8c77dce32730a81f1553"
+checksum = "3b8aab9e42044a63c7f60c8bec859b75c03fb2709138bb5a5695ff74b7be711a"
 dependencies = [
  "age",
  "base64 0.22.1",
@@ -2248,10 +2258,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2673,7 +2683,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

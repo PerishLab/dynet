@@ -1,4 +1,6 @@
 use dynet_api::manifest::load;
+use dynet_api::outbound::{Front, Roster};
+use dynet_core::Label;
 use serde_json::{Value, json};
 
 const KEY: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
@@ -65,4 +67,39 @@ fn vouches() {
         |value| value["nodes"][1]["password"] = json!("AAEC"),
         "not sixteen",
     );
+}
+
+#[test]
+fn boarding() {
+    let label = Label::new("zx/tunnel").expect("label");
+    let loaded = load(&base().to_string()).expect("manifest");
+    assert!(matches!(
+        Roster::new(loaded.entries(), 0).board(&label),
+        Ok(Front::Vless(_))
+    ));
+    let mut value = base();
+    value["nodes"][0]["protocol"] = json!("vmess");
+    let loaded = load(&value.to_string()).expect("VMess manifest");
+    assert!(matches!(
+        Roster::new(loaded.entries(), 0).board(&label),
+        Ok(Front::Vmess(_))
+    ));
+}
+
+#[test]
+fn authentication() {
+    let loaded = load(&base().to_string()).expect("manifest");
+    let label = Label::new("zx/tunnel").expect("label");
+    let fields = [
+        ("name", "zx/tunnel"),
+        ("type", "vless"),
+        ("server", "127.0.0.1"),
+        ("port", "443"),
+        ("uuid", "6f1c2a3b-0000-4000-8000-000000000001"),
+    ]
+    .map(|(key, value)| (key.to_owned(), value.to_owned()));
+    let incomplete = dynet_api::Entry::shaped(fields.into_iter().collect());
+    assert!(Roster::new(&[incomplete], 0).board(&label).is_err());
+    let unknown = Label::new("unknown/front").expect("unknown label");
+    assert!(Roster::new(loaded.entries(), 0).board(&unknown).is_err());
 }

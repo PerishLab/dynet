@@ -1,6 +1,6 @@
-use dynet_api::outbound::{Endpoint, PROBE, Roster, Run, Tunnel};
+use dynet_api::outbound::{Egress, Ingress, PROBE, Roster, Run};
 use dynet_api::{Entry, Loaded, resolver};
-use dynet_core::{Cluster, Error, Form};
+use dynet_core::{Cluster, Error, Form, Label};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -9,10 +9,10 @@ const LOOSE: u32 = 0;
 pub struct Nodes<'a>(pub &'a Loaded);
 
 pub fn lookup(entries: &[Entry], label: &str, name: &str) -> Result<Vec<resolver::Answer>, Error> {
-    let mut tunnel = board(entries, label, "1.1.1.1", 53)?;
-    tunnel.send(&resolver::ask(name, 0x2b2b)?)?;
+    let (mut egress, mut ingress) = board(entries, label, "1.1.1.1", 53)?;
+    egress.send(&resolver::ask(name, 0x2b2b)?)?;
     let mut answer = Vec::new();
-    while let Some(part) = tunnel.receive()? {
+    while let Some(part) = ingress.receive()? {
         answer.extend_from_slice(&part);
         if answer.len() >= 2 {
             let want = usize::from(u16::from_be_bytes([answer[0], answer[1]]));
@@ -24,25 +24,15 @@ pub fn lookup(entries: &[Entry], label: &str, name: &str) -> Result<Vec<resolver
     resolver::read(answer.get(2..).unwrap_or_default())
 }
 
-pub fn board(entries: &[Entry], label: &str, host: &str, port: u16) -> Result<Tunnel, Error> {
-    let entry = entries
-        .iter()
-        .find(|item| item.field("name") == Some(label))
-        .ok_or_else(|| Error::new("no such node"))?;
-    let endpoint = Endpoint::new(
-        entry
-            .field("server")
-            .ok_or_else(|| Error::new("no server"))?,
-        entry
-            .field("port")
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| Error::new("no port"))?,
-        entry
-            .field("uuid")
-            .ok_or_else(|| Error::new("no identity"))?,
-        LOOSE,
-    )?;
-    Tunnel::open(&endpoint, host, port)
+pub fn board(
+    entries: &[Entry],
+    label: &str,
+    host: &str,
+    port: u16,
+) -> Result<(Egress, Ingress), Error> {
+    Roster::new(entries, LOOSE)
+        .board(&Label::new(label)?)?
+        .dial(host, port)
 }
 
 pub struct Visit {
@@ -53,27 +43,12 @@ pub struct Visit {
 
 pub fn visit(entries: &[Entry], label: &str) -> Result<Visit, Error> {
     let began = Instant::now();
-    let entry = entries
-        .iter()
-        .find(|item| item.field("name") == Some(label))
-        .ok_or_else(|| Error::new("no such node"))?;
-    let host = entry
-        .field("server")
-        .ok_or_else(|| Error::new("no server"))?;
-    let port: u16 = entry
-        .field("port")
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| Error::new("no port"))?;
-    let uuid = entry
-        .field("uuid")
-        .ok_or_else(|| Error::new("no identity"))?;
-    let endpoint = Endpoint::new(host, port, uuid, LOOSE)?;
-    let mut tunnel = Tunnel::open(&endpoint, "api.ipify.org", 80)?;
+    let (mut egress, mut ingress) = board(entries, label, "api.ipify.org", 80)?;
     let opened = began.elapsed();
-    tunnel
+    egress
         .send(b"GET /?format=text HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")?;
     let mut answer = Vec::new();
-    while let Some(part) = tunnel.receive()? {
+    while let Some(part) = ingress.receive()? {
         answer.extend_from_slice(&part);
         if answer.len() > 4096 {
             break;
