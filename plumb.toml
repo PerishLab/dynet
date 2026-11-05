@@ -6,6 +6,11 @@ anchor = ["Cargo.toml"]
 note = "The Dynet API and CLI Rust workspace members."
 
 [[layout.seat]]
+path = "packaging/apk"
+anchor = ["package.toml"]
+note = "OpenWrt APK metadata consumed by Wharf; installation leaves capture disabled."
+
+[[layout.seat]]
 path = ".cargo"
 note = "Cargo registry configuration."
 
@@ -35,7 +40,7 @@ ns = "dynet"
 [release]
 authority = "https://releases.dynet.perish.uk"
 binaries = ["dynet"]
-targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin", "aarch64-unknown-linux-musl"]
 
 [workflow.hash.guard]
 "rust" = ["suite://cargo"]
@@ -44,3 +49,8 @@ targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-
 
 [release.windows]
 scope = "machine"
+
+[release.apk]
+binary = "dynet"
+root = "packaging/apk"
+profile = "openwrt-aarch64-cortex-a53"
