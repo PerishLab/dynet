@@ -1,0 +1,3 @@
+description = "Policy-based personal VPN routing"
+license = "MIT"
+depends = ["ip-full", "nftables-json"]

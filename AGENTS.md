@@ -425,7 +425,13 @@ Service logs contain events rather than protocol material.
 ## Release
 
 `plumb.toml` declares the product `dynet`, its authority and the one binary
-`dynet` for Linux GNU and Windows MSVC on x86-64 and macOS on Apple Silicon; nothing else publishes. The workspace declares
+`dynet` for Linux GNU and Windows MSVC on x86-64, macOS on Apple Silicon,
+and Linux musl on ARM64. The closed OpenWrt APK v3 placement targets
+aarch64_cortex-a53 and declares its ip-full and nftables-json userland
+prerequisites. Installation carries no service, credentials or traffic admission;
+TUN/kernel support and the network lifecycle remain separate prerequisites.
+Wharf owns package identity, signing, feed and verification; this repository
+carries only the declaration and package metadata. The workspace declares
 version `0.0.0`, and `crates/cli` carries the release identity region through
 `plumb::identity!("DYNET")`, which wharf binds after an unbound build. A
 release follows Plumb's lifecycle (`plumb release --help`); wharf publishes it.
