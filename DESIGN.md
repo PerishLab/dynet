@@ -177,6 +177,20 @@ not release the confirmed cache or turn a claimed destination direct.
 
 ## Commands and cutover
 
+`dynet --instance dynet0 --state ABSOLUTE_STATE seed --bootstrap ABSOLUTE_BOOTSTRAP
+--issued ABSOLUTE_LEDGER` explicitly initializes an absent encrypted checkpoint.
+The administrator supplies a frozen private ledger in the current native ledger
+serialization, also used inside checkpoints. Unknown or silently normalized
+records refuse. The existing SDK authenticates and decrypts the complete
+configuration before initialization. Its first checkpoint commits received,
+validated and every issued record together; applied remains absent until host
+readiness. Existing or interrupted destinations refuse, and the durable
+initialization marker prevents a partial seed from becoming an empty enrollment.
+The command changes no host protection, service or source files. It does not
+discover historical paths or read a legacy format. The operator quiesces the
+source while retaining protection, supplies its exact snapshot and promotes the
+completed state only after checking the receipt and issued records.
+
 All node-using diagnostics (`carry`, `resolve`, `reach`, `spread`) accept
 `--bootstrap`. They use the same authenticated, generation-aware source and
 private instance lease. Run them against an offline instance; a running service

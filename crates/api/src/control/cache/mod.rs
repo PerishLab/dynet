@@ -1,4 +1,5 @@
 mod checkpoint;
+mod seed;
 use super::{Candidate, Decoder, Incoming, custody, refused};
 pub use checkpoint::Checkpoint;
 use dynet_core::{Error, Ledger};

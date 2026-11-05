@@ -2,6 +2,7 @@ mod cache;
 mod custody;
 mod projection;
 mod recovery;
+mod seed;
 
 use super::{Cache, Decoder};
 use dynet_host::Private;

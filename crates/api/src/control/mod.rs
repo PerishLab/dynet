@@ -1,16 +1,16 @@
-mod bootstrap;
 mod cache;
 mod candidate;
+mod enrollment;
 mod network;
 mod payload;
 mod projection;
 mod session;
 mod worker;
 
-pub use bootstrap::{Bootstrap, Source};
 pub use cache::{Cache, Checkpoint};
 pub use candidate::{Candidate, Decoder, Incoming};
 pub use dynet_host::Private;
+pub use enrollment::{Bootstrap, Seed, Source};
 pub use payload::Payload;
 pub use projection::Projection;
 pub use session::{Control, Session};

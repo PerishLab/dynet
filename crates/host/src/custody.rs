@@ -51,7 +51,15 @@ impl Private {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
             Err(error) => return Err(error),
         }
-        native::check(&native::Place(path).open(true)?, self.machine, false)
+        native::check(&native::Place(path).open(true)?, self.machine, false)?;
+        native::Place(path).sync()
+    }
+
+    pub fn fresh(&self, path: &Path) -> io::Result<()> {
+        self.ancestors(path)?;
+        native::Place(path).folder(self.machine)?;
+        native::check(&native::Place(path).open(true)?, self.machine, false)?;
+        native::Place(path).sync()
     }
 
     pub fn create(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
