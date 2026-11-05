@@ -1537,16 +1537,15 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.134.0"
+version = "0.135.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "6eb73dea83adfcd7d014df9eb2c2b4b732edc50c3e599a9253ecbd6c0dbc5f0d"
+checksum = "07903add8db8ba62a5c3b43777c91c67d73c1095d78c14fbb59c9b7d0c4b2690"
 dependencies = [
  "base64 0.22.1",
  "clap",
  "dunce",
  "locus",
  "object",
- "pin-project-lite",
  "plumb-macro",
  "radicula-config",
  "radicula-context",
@@ -1566,9 +1565,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.134.0"
+version = "0.135.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "2efca021faff798e6ed84e734ee5d5dd4b6d1efb59346e3baf94ac5cd6ce8b29"
+checksum = "da523eac53842d40fd506318d4f929b6421c44b5804d1c6addf8f75e4f4ab990"
 dependencies = [
  "proc-macro2",
  "quote",
