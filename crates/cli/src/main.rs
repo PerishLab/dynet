@@ -7,6 +7,7 @@ mod flush;
 mod node;
 mod observation;
 mod platform;
+mod seed;
 mod source;
 mod watch;
 
@@ -48,6 +49,7 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    Seed(seed::Errand),
     Doctor,
     Up {
         #[arg(long, default_value = WHOLE)]
@@ -201,6 +203,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Doctor => Boundary(instance).doctor(&config),
+        Command::Seed(errand) => seed::seed(&errand, &instance, &state),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
         Command::Down => Boundary(instance).lower(),
         Command::Standing => Boundary(instance).reading(&state),

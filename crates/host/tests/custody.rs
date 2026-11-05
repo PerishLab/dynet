@@ -22,6 +22,22 @@ fn durability() {
     assert!(private.read(&path, 6).is_err());
 }
 
+#[test]
+fn fresh() {
+    let root = temporary();
+    let root = root.path().canonicalize().unwrap();
+    let private = Private::current();
+    let home = root.join("private");
+    private.fresh(&home).unwrap();
+    assert!(private.fresh(&home).is_err());
+    private.create(&home.join("retained"), b"original").unwrap();
+    assert!(private.fresh(&home).is_err());
+    assert_eq!(
+        private.read(&home.join("retained"), 16).unwrap(),
+        b"original"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn ownership() {

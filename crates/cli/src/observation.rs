@@ -15,6 +15,7 @@ pub(crate) fn start(command: &str) -> Option<Run> {
 pub(crate) fn name(command: &crate::Command) -> &'static str {
     match command {
         crate::Command::Identity { .. } => "identity",
+        crate::Command::Seed(_) => "seed",
         crate::Command::Doctor => "doctor",
         crate::Command::Up { .. } => "up",
         crate::Command::Down => "down",
