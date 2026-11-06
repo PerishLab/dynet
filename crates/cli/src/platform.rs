@@ -2,6 +2,8 @@
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "linux")]
+pub(crate) mod procd;
 #[cfg(windows)]
 mod windows;
 

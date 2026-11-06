@@ -16,6 +16,9 @@ pub struct Errand {
     pub bare: bool,
     #[arg(long)]
     pub unit: bool,
+    #[cfg(target_os = "linux")]
+    #[arg(long, requires = "unit", conflicts_with_all = ["bare", "service"])]
+    pub procd: bool,
     #[arg(long, default_value = "30")]
     pub seconds: u64,
     #[arg(long)]
@@ -33,6 +36,11 @@ pub struct Stage<'a> {
 
 pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     if stage.errand.unit {
+        #[cfg(target_os = "linux")]
+        if stage.errand.procd {
+            print!("{}", crate::platform::procd::render(instance, stage)?);
+            return Ok(ExitCode::SUCCESS);
+        }
         #[cfg(not(target_os = "macos"))]
         print!("{}", unit(instance.get(), stage));
         #[cfg(target_os = "macos")]
