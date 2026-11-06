@@ -2,8 +2,9 @@ mod budget;
 pub(super) use budget::Budget;
 mod packet;
 use packet::{ends, write};
+mod noise;
 mod peek;
-mod progress;
+use noise::Noise;
 mod roll;
 mod route;
 mod stage;
@@ -33,6 +34,7 @@ pub struct Divert<'a> {
     pub(super) dart: u16,
     book: Mutex<Roll>,
     full: Once,
+    noise: Noise,
     done: AtomicBool,
     pub(super) warren: &'a Warren<'a>,
     pub(super) served: Mutex<Served>,
@@ -67,6 +69,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         dart,
         book: Mutex::new(Roll::new()),
         full: Once::new(),
+        noise: Noise::new(),
         done: AtomicBool::new(false),
         warren,
         served: Mutex::new(Served::default()),
@@ -83,7 +86,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         ));
         let _ = seat;
     }
-    std::thread::scope(|scope| {
+    let carried = std::thread::scope(|scope| {
         scope.spawn(|| stand(warren, patience, &resolver));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
@@ -91,7 +94,9 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
             scope.spawn(|| divert.usher(seat, transit));
         }
         divert.pump(&device, patience)
-    })?;
+    });
+    divert.noise.flush(true, warren.told);
+    carried?;
     divert
         .served
         .into_inner()
@@ -120,6 +125,7 @@ impl Divert<'_> {
             }
             if since >= heeded + HEED {
                 heeded = since;
+                self.noise.flush(false, self.told());
                 self.warren.renew();
                 self.warren.heed();
             }

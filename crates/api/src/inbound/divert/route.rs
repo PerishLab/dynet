@@ -1,6 +1,7 @@
 use super::Divert;
+use super::noise::Key;
 use crate::inbound::warren::Chosen;
-use dynet_core::{Bearing, Course, Ground, Sight};
+use dynet_core::{Bearing, Course, Ground, Refusal, Sight};
 use std::net::{IpAddr, SocketAddrV4};
 
 impl Divert<'_> {
@@ -38,17 +39,36 @@ impl Divert<'_> {
                 Some((self.warren.direct(selection)?, aimed))
             }
             Course::Direct => {
-                (self.told())(&format!(
-                    "{target} would leave directly, and datagrams are never sent from here; refused"
-                ));
+                let line = || {
+                    format!(
+                        "{target} would leave directly, and datagrams are never sent from here; refused"
+                    )
+                };
+                if target.ip().is_multicast() {
+                    self.noise
+                        .refuse(Key::Multicast(target.port()), line, self.told());
+                } else {
+                    (self.told())(&line());
+                }
                 None
             }
             Course::Refused(cluster, refusal) => {
-                (self.told())(&format!(
-                    "{target} refused on {:?}: cluster {} is {refusal:?}",
-                    decision.ground(),
-                    cluster.get()
-                ));
+                let line = || {
+                    format!(
+                        "{target} refused on {:?}: cluster {} is {refusal:?}",
+                        decision.ground(),
+                        cluster.get()
+                    )
+                };
+                if sight.bearing == Bearing::Datagram && matches!(refusal, Refusal::Unborne) {
+                    self.noise.refuse(
+                        Key::Unborne(cluster.clone(), target.port()),
+                        line,
+                        self.told(),
+                    );
+                } else {
+                    (self.told())(&line());
+                }
                 None
             }
         }
