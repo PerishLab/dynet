@@ -63,9 +63,10 @@ fn work(instance: &Instance, stage: &Stage) -> u32 {
         transit: 0,
     };
     told(&format!(
-        "starting {} {}",
+        "starting {} {} pid={}",
         instance.get(),
-        dynet_api::VERSION
+        plumb::version!("DYNET"),
+        std::process::id()
     ));
     if let Err(error) = host::establish(instance, &ground) {
         told(&format!("refused to raise: {error}"));

@@ -22,9 +22,10 @@ pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Erro
         transit: stage.transit,
     };
     told(&format!(
-        "starting {} {}",
+        "starting {} {} pid={}",
         instance.get(),
-        dynet_api::VERSION
+        plumb::version!("DYNET"),
+        std::process::id()
     ));
     host::establish(instance, &ground)?;
     let carried = watch::carried(instance, stage, (&halt, &told));
