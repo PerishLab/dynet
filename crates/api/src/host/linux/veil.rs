@@ -28,10 +28,10 @@ impl Veil {
     }
 
     pub fn attended(seat: Ipv4Addr, port: u16) -> bool {
-        match std::net::UdpSocket::bind((seat, port)) {
-            Ok(_) => false,
-            Err(error) => error.kind() == std::io::ErrorKind::AddrInUse,
-        }
+        std::net::UdpSocket::bind((seat, port))
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::AddrInUse)
+            && std::net::TcpListener::bind((seat, port))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::AddrInUse)
     }
 
     pub fn raise(

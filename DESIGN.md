@@ -228,3 +228,20 @@ statistics are not a durable audit. A counter failure reports unknown counts
 once and does not alter refusal. Formatting sinks run outside the data lock.
 Other refusals, stream failures, startup, control and protection events retain
 their existing reporting. No packet, route or fallback decision changes.
+
+## Resolver transport
+
+The fixed DNS seat binds UDP and TCP together before confirming the applied
+configuration. Both transports use the same request snapshot, circuit fence,
+store, durable address ledger and independent sixteen-request direct/proxy
+budgets. TCP has a separate ceiling of32 connections; an idle frame waits30s,
+a frame in progress2s, complete-frame writes2s, and reads poll at200ms for halt. Lengths cannot exceed
+65535 bytes. A connection accepts successive and pipelined questions in order.
+Malformed, stalled or failed requests close the connection; policy-authorized
+lookup failures return SERVFAIL. A direct TCP question uses a marked TCP
+upstream with a2s connect bound,8s first-answer bound and2s frame bound, and
+attaches that socket to the request circuit. UDP continues to relay UDP; an
+upstream truncation reaches its client, whose TCP retry now has a real seat.
+Claimed names retain the same suppression, persistence and capture-before-answer
+rules. This repair originates in#152; native whole-source admission still needs
+its separate operator window.

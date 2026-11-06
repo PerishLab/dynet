@@ -66,3 +66,25 @@ fn malformed() {
     let held = policy("proxy.invalid");
     assert!(Call::new(&held, vec![0; 12], "127.0.0.1:1".parse().unwrap()).is_err());
 }
+
+#[test]
+fn seating() {
+    let tcp = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = tcp.local_addr().unwrap();
+    let std::net::SocketAddr::V4(address) = address else {
+        panic!()
+    };
+    assert!(super::seat(address).is_err());
+    let udp = std::net::UdpSocket::bind(address).unwrap();
+    drop(tcp);
+    assert!(super::seat(address).is_err());
+    drop(udp);
+    let sockets = super::seat(address).unwrap();
+    assert_eq!(
+        sockets.0.local_addr().unwrap(),
+        sockets.1.local_addr().unwrap()
+    );
+    assert!(crate::host::Veil::attended(*address.ip(), address.port()));
+    drop(sockets.1);
+    assert!(!crate::host::Veil::attended(*address.ip(), address.port()));
+}

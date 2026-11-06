@@ -1,5 +1,5 @@
 use dynet_api::host::Veil;
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::{Ipv4Addr, TcpListener, UdpSocket};
 
 const LOOP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
@@ -13,12 +13,16 @@ fn spare() -> u16 {
 
 #[test]
 fn answers() {
-    let port = spare();
-    let held = UdpSocket::bind((LOOP, port)).expect("a seat to hold");
+    let held = UdpSocket::bind((LOOP, 0)).expect("a seat to hold");
+    let port = held.local_addr().unwrap().port();
+    assert!(!Veil::attended(LOOP, port), "UDP alone is incomplete");
+    let tcp = TcpListener::bind((LOOP, port)).unwrap();
     assert!(
         Veil::attended(LOOP, port),
         "a seat something is holding reads as answering"
     );
+    drop(tcp);
+    assert!(!Veil::attended(LOOP, port), "the TCP seat was released");
     drop(held);
     assert!(
         !Veil::attended(LOOP, port),

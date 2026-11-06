@@ -117,6 +117,17 @@ are.
   own first address rather than loopback, because a caller that is not this host
   cannot reach loopback and reaching it through a redirected local route would
   return an answer from an address the caller never wrote to.
+- The resolver seat is one address and port held over both UDP and TCP before
+  application is confirmed. TCP questions use DNS length framing, retain
+  connection reuse and pipelining, and share UDP's policy, cache, durable ledger
+  and separate direct/proxy request budgets. At most 32 TCP connections stand;
+  idle input waits at most 30 seconds and a started frame at most two. Writes
+  also have a two-second complete-frame deadline. A direct
+  TCP question uses a marked, circuit-bound TCP upstream, so a truncation retry
+  can receive the full answer. A failed admitted lookup answers SERVFAIL while
+  its policy still permits the response; it never chooses a direct fallback.
+  TCP failure ends that connection, and halt interrupts idle reads. Read-only
+  seat observation requires both transports, not UDP alone.
 - A query forwarded from elsewhere is captured in the prerouting hook and only
   from a declared source, the same scope that decides what traffic is diverted
   at all. Without a declared source there is no prerouting chain, so nothing
