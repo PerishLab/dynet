@@ -213,3 +213,18 @@ new service and its exact distribution, then delete the former plaintext
 manifest and obsolete files. A remaining `<state>/<instance>.ledger` refuses a
 new start so a missed migration cannot silently release issued addresses. There
 is no old-format reader, historical-directory discovery or plaintext fallback.
+
+## Refusal reporting
+
+The diverter aggregates only multicast datagrams decided direct and datagrams
+refused as Unborne. Their first event is retained with its original reason;
+60-second monotonic windows summarize seen and suppressed counts, relative first
+and last times, and a process-local window number. At most 128 cluster/port
+buckets and two class overflow buckets exist. Overflow remains explicitly
+classified, and saturated counters report lower bounds. Single-event and empty
+windows emit no redundant summary. The one-second worker tick and orderly exit
+flush pending summaries; process abort may lose the unfinished window. These
+statistics are not a durable audit. A counter failure reports unknown counts
+once and does not alter refusal. Formatting sinks run outside the data lock.
+Other refusals, stream failures, startup, control and protection events retain
+their existing reporting. No packet, route or fallback decision changes.

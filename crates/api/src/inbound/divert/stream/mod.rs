@@ -1,9 +1,10 @@
 use super::Divert;
-use super::progress::Progress;
+mod progress;
 use crate::inbound::IDLE;
 use crate::inbound::link::{Link, Taken};
 use crate::inbound::warren::Charge;
 use crate::outbound::Circuit;
+use progress::Progress;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::Mutex;
