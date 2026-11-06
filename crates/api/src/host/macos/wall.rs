@@ -2,7 +2,7 @@ use super::{dns::Dns, paths, refused};
 use crate::host::{Fragment, Held, attempt, feed, held, run};
 use dynet_core::{Error, Instance, Range};
 use std::collections::BTreeSet;
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::Ipv4Addr;
 use std::process::Command;
 
 pub struct Veil;
@@ -26,8 +26,10 @@ impl Veil {
     }
 
     pub fn attended(seat: Ipv4Addr, port: u16) -> bool {
-        UdpSocket::bind((seat, port))
+        std::net::UdpSocket::bind((seat, port))
             .is_err_and(|error| error.kind() == std::io::ErrorKind::AddrInUse)
+            && std::net::TcpListener::bind((seat, port))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::AddrInUse)
     }
 
     pub fn raise(instance: &Instance, seat: Ipv4Addr) -> Result<(), Error> {

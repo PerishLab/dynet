@@ -9,7 +9,7 @@ use dynet_core::{
     Selector, Sight, Verdict, decide, usable,
 };
 use std::collections::HashMap;
-use std::net::UdpSocket;
+use std::net::{TcpListener, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -221,7 +221,7 @@ fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
         .choose(bearing, Instant::now())
 }
 
-pub fn stand(warren: &Warren, span: Duration, socket: &UdpSocket) {
+pub fn stand(warren: &Warren, span: Duration, socket: &(UdpSocket, TcpListener)) {
     let Err(error) = warden::attend(warren, span, socket) else {
         return;
     };

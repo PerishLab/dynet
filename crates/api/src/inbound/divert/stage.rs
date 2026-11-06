@@ -2,7 +2,7 @@ use crate::host::Link;
 use crate::inbound::warren::Warren;
 use dynet_core::{Error, Span};
 use dynet_host::Device;
-use std::net::{TcpListener, UdpSocket};
+use std::net::{SocketAddrV4, TcpListener, UdpSocket};
 use std::time::{Duration, Instant};
 
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -12,7 +12,7 @@ pub(super) struct Seats {
     pub device: Device,
     pub listener: TcpListener,
     pub darts: UdpSocket,
-    pub resolver: UdpSocket,
+    pub resolver: (UdpSocket, TcpListener),
 }
 
 pub(super) fn stage(warren: &Warren, span: Span) -> Result<Seats, Error> {
@@ -26,7 +26,9 @@ pub(super) fn stage(warren: &Warren, span: Span) -> Result<Seats, Error> {
             .and_then(|listener| UdpSocket::bind((span.seat(), 0)).map(|darts| (listener, darts)));
         match seated {
             Ok((listener, darts)) => {
-                let resolver = UdpSocket::bind((span.seat(), warren.port)).map_err(refused)?;
+                let resolver =
+                    crate::inbound::warden::seat(SocketAddrV4::new(span.seat(), warren.port))
+                        .map_err(refused)?;
                 warren.confirmed()?;
                 return Ok(Seats {
                     device,

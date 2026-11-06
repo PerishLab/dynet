@@ -1,18 +1,22 @@
-use super::lasting;
 mod admission;
 mod call;
 #[cfg(test)]
 mod tests;
 use admission::Admission;
 use call::Call;
+mod frame;
+mod reply;
+mod tcp;
+mod udp;
 mod wire;
 use super::store::{Key, Recall};
 use super::warren::{self, Warren};
 use crate::host::clock;
 use crate::resolver::{self, Answer, Packet, Query};
 use dynet_core::{Bearing, Domain, Error, Name, Verdict};
-use std::net::{IpAddr, UdpSocket};
-use std::time::{Duration, Instant};
+use reply::Reply;
+use std::net::{IpAddr, TcpListener, UdpSocket};
+use std::time::Duration;
 use wire::{capture, spare, through};
 
 const REST: Duration = Duration::from_millis(200);
@@ -22,47 +26,44 @@ const MARK: u16 = 0x7a7a;
 
 struct Post<'a> {
     warren: &'a Warren<'a>,
-    socket: &'a UdpSocket,
+    reply: Reply<'a>,
 }
 
-pub fn attend(warren: &Warren, span: Duration, socket: &UdpSocket) -> Result<(), Error> {
-    let _ = socket.set_read_timeout(Some(REST));
-    let _ = socket.set_write_timeout(Some(REST));
-    let post = Post { warren, socket };
-    let started = Instant::now();
+pub(super) fn seat(address: std::net::SocketAddrV4) -> std::io::Result<(UdpSocket, TcpListener)> {
+    let udp = UdpSocket::bind(address)?;
+    let tcp = TcpListener::bind(udp.local_addr()?)?;
+    udp.set_read_timeout(Some(REST))?;
+    udp.set_write_timeout(Some(REST))?;
+    tcp.set_nonblocking(true)?;
+    Ok((udp, tcp))
+}
+
+pub fn attend(
+    warren: &Warren,
+    span: Duration,
+    sockets: &(UdpSocket, TcpListener),
+) -> Result<(), Error> {
     let admission = Admission::new();
     std::thread::scope(|scope| {
-        while lasting(started, span) && !warren.halted() {
-            let mut room = [0u8; ROOM];
-            let Ok((size, peer)) = socket.recv_from(&mut room) else {
-                continue;
-            };
-            let held = warren.current();
-            let Ok(call) = Call::new(&held, room[..size].to_vec(), peer) else {
-                continue;
-            };
-            let Some(permit) = admission.enter(&call) else {
-                let reply = Packet::new(&call.asked).failed(&call.query);
-                let _ = post.speak(&reply, &call);
-                continue;
-            };
-            let post = &post;
-            scope.spawn(move || {
-                let _permit = permit;
-                post.answer(call);
-            });
-        }
+        scope.spawn(|| udp::attend(warren, span, &sockets.0, &admission));
+        tcp::attend(warren, span, &sockets.1, &admission);
     });
     Ok(())
 }
 
 impl Post<'_> {
-    fn answer(&self, call: Call) {
-        let spoken = match self.settle(&call) {
+    fn answer(&self, call: Call) -> bool {
+        let result = self.settle(&call);
+        let answered = result.is_ok();
+        let spoken = match result {
             Ok(spoken) => spoken,
-            Err(error) => format!("refused: {error}"),
+            Err(error) => {
+                let _ = self.speak(&Packet::new(&call.asked).failed(&call.query), &call);
+                format!("refused: {error}")
+            }
         };
         (self.warren.told)(&spoken);
+        answered
     }
 
     fn settle(&self, call: &Call) -> Result<String, Error> {
@@ -73,8 +74,7 @@ impl Post<'_> {
         }
         let domain = Domain::new(&query.name)?;
         let Some(cluster) = &call.cluster else {
-            let plain =
-                asking.relay(&self.warren.current().upstream, self.warren.instance.mark())?;
+            let plain = self.reply.relay(self.warren, call)?;
             self.speak(&plain, call)?;
             return Ok(format!("{} left to the upstream", query.name));
         };
@@ -123,7 +123,7 @@ impl Post<'_> {
                 query.name, query.kind
             ));
         }
-        let plain = asking.relay(&self.warren.current().upstream, self.warren.instance.mark())?;
+        let plain = self.reply.relay(self.warren, call)?;
         self.speak(&plain, call)?;
         Ok(format!(
             "{} asked for type {}, left to the upstream",
@@ -196,8 +196,7 @@ impl Post<'_> {
             return Err(Error::new("the DNS policy changed before its answer"));
         }
         call.circuit
-            .allow(|| self.socket.send_to(body, call.peer))?
-            .map(|_| ())
+            .allow(|| self.reply.send(body, call.peer))?
             .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))
     }
 
