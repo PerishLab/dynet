@@ -424,6 +424,20 @@ Service logs contain events rather than protocol material.
 
 ## Release
 
+Linux `divert --unit --procd` renders a forwarded-only procd worker definition
+using the actual executable and an explicit state root. It carries resolved
+port, span, sources, transit and bootstrap references without reading credentials
+or changing the host. procd owns foreground supervision, finite respawn and a
+ten-second termination bound, with no core dumps, 512 file descriptors and a
+512 MiB address-space ceiling. Routine request output is not accumulated.
+The definition has no boot ordering and performs no `up` or `down`: prepared
+kernel projection and separately reviewed withdrawal remain operator actions.
+Stopping or crashing a worker retains its protection; process supervision alone
+proves neither readiness nor quiescence for cleanup. Native startup under these
+ceilings and the complete fenced lifecycle must be qualified before live use.
+The renderer's environment grant reads only the current executable identity;
+machine settings still come from the ordinary configuration cascade.
+
 `plumb.toml` declares the product `dynet`, its authority and the one binary
 `dynet` for Linux GNU and Windows MSVC on x86-64, macOS on Apple Silicon,
 and Linux musl on ARM64. The closed OpenWrt APK v3 placement targets
