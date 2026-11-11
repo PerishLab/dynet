@@ -12,6 +12,7 @@ fn render(bootstrap: &str, state: bool, local: bool, extra: &[&str]) -> Output {
         .env("DYNET_SOURCES", "192.168.1.22/32")
         .env("DYNET_TRANSIT", "1053")
         .env_remove("DYNET_STATE")
+        .env_remove("DYNET_RECORD")
         .args([
             "--instance",
             "dynetpilot",
@@ -130,4 +131,35 @@ fn reload() {
     let output = shell(&text, "reload");
     assert!(output.status.success());
     assert_eq!(output.stdout, b"dynet-pilot\0dynetpilot\0HUP\0");
+}
+
+#[test]
+fn recorded() {
+    let home = tempfile::tempdir().unwrap();
+    let path = "/tmp/dynet logs ' $(exit 41)";
+    let output = Command::new(env!("CARGO_BIN_EXE_dynet"))
+        .env("HOME", home.path())
+        .env("DYNET_RECORD", path)
+        .env("DYNET_LOCAL", "false")
+        .env("DYNET_SOURCES", "192.168.1.22/32")
+        .args([
+            "--state",
+            "/private/state",
+            "divert",
+            "--unit",
+            "--procd",
+            "--bootstrap",
+            "/private/bootstrap",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    let mut text = b"procd_open_instance() { :; }\nprocd_set_param() { printf '%s\\000' \"$@\"; }\nprocd_close_instance() { :; }\n".to_vec();
+    text.extend(output.stdout);
+    text.extend(b"\nstart_service\n");
+    let output = shell(&text, "start");
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(&format!("DYNET_RECORD={path}\0")));
+    assert!(text.contains("stdout\x001\0"));
 }

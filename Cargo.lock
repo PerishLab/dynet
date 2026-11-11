@@ -1537,9 +1537,9 @@ dependencies = [
 
 [[package]]
 name = "plumb"
-version = "0.138.0"
+version = "0.148.1"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "68e747c8c1f0c1421fb9a753549687579e32a3f737835b7fca77d01cc94b6d57"
+checksum = "3778ce629bc0134f0c07783502118229c846b6954c55477a07ddb56a776ec8c9"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1565,9 +1565,9 @@ dependencies = [
 
 [[package]]
 name = "plumb-macro"
-version = "0.138.0"
+version = "0.148.1"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "a98e37cc6bda8fe1c0190c8b01e4d108f13354d9869e62cccf48db17fe6a43ee"
+checksum = "c8aa4a75017a39081da9ecf6ce81880325f17430b59e0033a05b8bc83ba441ad"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1985,9 +1985,9 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.5.0"
+version = "0.6.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "3b8aab9e42044a63c7f60c8bec859b75c03fb2709138bb5a5695ff74b7be711a"
+checksum = "cf9e30131eb06b199d1c19afdd171b969c4c84761a08ba2310ba682cb591b825"
 dependencies = [
  "age",
  "base64 0.22.1",
