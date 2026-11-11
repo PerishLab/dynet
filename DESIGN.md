@@ -245,3 +245,42 @@ upstream truncation reaches its client, whose TCP retry now has a real seat.
 Claimed names retain the same suppression, persistence and capture-before-answer
 rules. This repair originates in#152; native whole-source admission still needs
 its separate operator window.
+
+## Linux diagnostics
+
+`DYNET_RECORD` opts continuous diversion into bounded asynchronous diagnostics.
+It names an absolute private directory owned by the worker user, mode 0700.
+Without this setting, output is unchanged. Procd unit generation carries the
+setting and enables stdout capture only when selected. Other platforms refuse
+this option. Unit rendering does not access the directory.
+
+The producer performs no file or sink IO. It offers at most 256 records to a
+nonblocking queue, clips escaped diagnostic text to 512 ASCII characters, and
+adds instance, PID, sequence, monotonic uptime, classification, detail and
+truncation fields.
+A detached writer owns stdout; blocked output cannot stall forwarding or mode
+expiry. Full queues and failed record writes increment a saturating cumulative
+loss count. The writer reports that count at startup and after changes when the
+sink accepts it. This count covers producer and writer losses, not downstream
+syslog, collector, rotation or power losses; sequence gaps and restart identity
+are observable but do not prove complete capture. Shutdown does not drain or
+join a blocked writer.
+
+Brief mode retains recognized failures and unknown text, suppressing recognized
+routine success messages. This compatibility filter is conservative text
+classification, not a typed event severity contract. A separate watcher polls
+`detail.until` every 250 ms. The file must be owned by the worker user, mode
+0600, regular, unlinked elsewhere and not a symlink. Its integer deadline uses
+Linux boot uptime and may be no more than 300 seconds ahead. Missing, invalid,
+expired or overlong controls select brief mode. Enabling detail needs no worker
+restart. Directory custody failure refuses diagnostic initialization; subsequent
+control or output failures preserve forwarding. Operators provision the private
+RAM directory before starting a worker.
+
+The deployed gateway collector is an independent operator service. It retains
+two native streams and two DNS frontend streams in bounded private RAM files.
+Frontend query serials and original clients belong to dnsmasq; Dynet observes
+the forwarder. Matching a name and time across those streams is an inference,
+not an exact client-to-flow identifier. Collector restarts may replay the shared
+syslog ring, and live exports may have rotation gaps or duplicates. Runtime
+files survive worker restarts but disappear at router reboot.

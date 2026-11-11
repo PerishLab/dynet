@@ -49,15 +49,25 @@ pub(crate) fn render(instance: &Instance, stage: &Stage) -> Result<String, Error
     let sources = quoted(&format!("DYNET_SOURCES={}", stage.config.sources));
     let transit = quoted(&format!("DYNET_TRANSIT={}", stage.transit));
     let name = quoted(instance.get());
+    let record = match &stage.config.record {
+        Some(path) => {
+            let path = path
+                .to_str()
+                .ok_or_else(|| Error::new("diagnostic control path is not UTF-8"))?;
+            format!(" {}", quoted(&format!("DYNET_RECORD={path}")))
+        }
+        None => String::new(),
+    };
+    let stdout = u8::from(stage.config.record.is_some());
     Ok(format!(
         "#!/bin/sh /etc/rc.common\nUSE_PROCD=1\n\nstart_service() {{\n\
          \tprocd_open_instance {name}\n\
          \tprocd_set_param command {command}\n\
-         \tprocd_set_param env 'DYNET_LOCAL=false' {sources} {transit}\n\
+         \tprocd_set_param env 'DYNET_LOCAL=false' {sources} {transit}{record}\n\
          \tprocd_set_param limits 'core=0 0' 'nofile=512 512' 'as=536870912 536870912'\n\
          \tprocd_set_param respawn 3600 5 5\n\
          \tprocd_set_param term_timeout 10\n\
-         \tprocd_set_param stdout 0\n\
+         \tprocd_set_param stdout {stdout}\n\
          \tprocd_set_param stderr 1\n\
          \tprocd_close_instance\n\
          }}\n\nreload_service() {{\n\

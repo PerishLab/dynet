@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+mod emit;
+
 use dynet_api::host::Journal;
 use dynet_api::{control, inbound};
 use dynet_core::{Error, Instance, Span};
@@ -56,6 +59,11 @@ pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
         signal_hook::flag::register(signal, Arc::clone(&halt))
             .map_err(|error| Error::new(format!("cannot listen for a halt: {error}")))?;
     }
+    #[cfg(target_os = "linux")]
+    let emit = emit::Emit::open(stage.config.record.as_deref(), instance)?;
+    #[cfg(target_os = "linux")]
+    let told = |line: &str| emit.tell(instance.get(), line);
+    #[cfg(not(target_os = "linux"))]
     let told = |line: &str| println!("  {line}");
     let served = carried(instance, stage, (&halt, &told))?;
     Ok(recount(&served))

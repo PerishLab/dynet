@@ -109,6 +109,7 @@ pub(crate) struct Config {
     local: bool,
     sources: String,
     transit: u16,
+    record: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -121,12 +122,19 @@ impl Default for Config {
             local: true,
             sources: String::new(),
             transit: 0,
+            record: None,
         }
     }
 }
 
 impl Config {
     fn validate(&self) -> Result<(), Error> {
+        if self.record.as_ref().is_some_and(|path| !path.is_absolute()) {
+            return Err(Error::new("diagnostic control requires an absolute path"));
+        }
+        if self.record.is_some() && !cfg!(target_os = "linux") {
+            return Err(Error::new("diagnostic output is offered on Linux alone"));
+        }
         if self.local {
             return Ok(());
         }
