@@ -54,6 +54,12 @@ impl Declared {
         &self.material
     }
 
+    pub fn relay(&self) -> bool {
+        self.protocol == "shadowsocks"
+            && self.field("method") == Some("2022-blake3-aes-128-gcm")
+            && self.field("uot") == Some("2")
+    }
+
     pub fn capability(&self) -> Capability {
         let relayed = self.protocol == "vmess" && self.field("udp") == Some("true");
         Capability::new(match relayed {

@@ -1,4 +1,4 @@
-use super::{Circuit, Egress, Exit, Front, Ingress, Listener, Speaker};
+use super::{Circuit, Egress, Exit, Front, Ingress, Listener, Speaker, uot};
 use crate::outbound::{veil, vmess::Tunnel};
 use dynet_core::Fault;
 use std::sync::Arc;
@@ -38,6 +38,7 @@ impl Passage {
         match self {
             Self::Guarded(passage, _) => passage.bearing(),
             Self::Plain(front) => front.bearing(),
+            Self::Veiled(_, exit) => exit.relay,
             _ => false,
         }
     }
@@ -54,6 +55,9 @@ impl Passage {
     ) -> Result<(Speaker, Listener), Fault> {
         if let Self::Guarded(passage, circuit) = self {
             return passage.carrying(host, port, Some(circuit));
+        }
+        if let Self::Veiled(front, exit) = self {
+            return relayed(front, exit, (host, port), gate);
         }
         let Self::Plain(Front::Vmess(endpoint)) = self else {
             return Err(Fault::Handshake);
@@ -114,5 +118,26 @@ fn veiled(
     Ok((
         Speaker::Veiled(egress, Box::new(cloak)),
         Listener::Veiled(ingress, Box::new(shroud)),
+    ))
+}
+
+fn relayed(
+    front: &Front,
+    exit: &Exit,
+    seat: (&str, u16),
+    gate: Option<&Circuit>,
+) -> Result<(Speaker, Listener), Fault> {
+    if !exit.relay {
+        return Err(Fault::Handshake);
+    }
+    let request = uot::request(seat).map_err(|_| Fault::Handshake)?;
+    let (mut egress, ingress) = front.boarding(&exit.host, exit.port, gate)?;
+    let (mut cloak, shroud) = veil(exit.secret).map_err(|_| Fault::Handshake)?;
+    cloak
+        .greet(&mut egress, (uot::HOST, 0), &request)
+        .map_err(|_| Fault::Handshake)?;
+    Ok((
+        Speaker::Relayed(egress, Box::new(cloak)),
+        Listener::Relayed(ingress, Box::new(shroud), uot::Frames::default()),
     ))
 }

@@ -230,7 +230,7 @@ impl Post<'_> {
                 Ok(_) => Verdict::Answered,
                 Err(fault) => Verdict::Faulted(*fault),
             };
-            warren::observed(self.warren, chosen.charge.as_ref(), verdict);
+            warren::observed(chosen.charge.as_ref(), verdict);
             if let Err(fault) = &carried {
                 (self.warren.told)(&format!(
                     "{} did not answer ({fault:?}), asking another node",

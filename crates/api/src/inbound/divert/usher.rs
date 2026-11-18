@@ -83,5 +83,9 @@ fn borne(stream: &TcpStream, transit: u16) -> Option<SocketAddr> {
 }
 
 fn shaped(caller: SocketAddrV4, target: SocketAddrV4) -> Held {
-    Held { caller, target }
+    Held {
+        caller,
+        target,
+        borne: false,
+    }
 }

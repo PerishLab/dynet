@@ -177,6 +177,7 @@ impl Divert<'_> {
         let held = Held {
             caller: SocketAddrV4::new(seen.0, source),
             target: SocketAddrV4::new(seen.1, target),
+            borne,
         };
         let Some(spare) = self.claim(held) else {
             return false;
@@ -194,7 +195,7 @@ impl Divert<'_> {
     }
 
     fn back(&self, body: &mut [u8], told: (u16, u16, bool)) -> bool {
-        let Some(held) = self.recall(told.1) else {
+        let Some(held) = self.recall(told.1, told.2) else {
             return false;
         };
         write(
@@ -272,7 +273,11 @@ impl Divert<'_> {
         self.warren.told
     }
 
-    pub(super) fn recall(&self, spare: u16) -> Option<Held> {
-        self.book.lock().ok()?.recall(spare)
+    pub(super) fn recall(&self, spare: u16, borne: bool) -> Option<Held> {
+        self.book
+            .lock()
+            .ok()?
+            .recall(spare)
+            .filter(|held| held.borne == borne)
     }
 }

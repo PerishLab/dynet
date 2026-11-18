@@ -114,7 +114,10 @@ fn exited(manifest: &Manifest, label: &str) -> Result<(), Error> {
         .find(|node| node.label().get() == label)
         .ok_or_else(|| Error::new(format!("exit {label} is not declared")))?;
     match (node.protocol(), node.field("method")) {
-        ("shadowsocks", Some(CIPHER)) => Ok(()),
+        ("shadowsocks", Some(CIPHER)) => match node.field("uot") {
+            None | Some("2") => Ok(()),
+            Some(_) => Err(Error::new(format!("exit {label} requires UoT version 2"))),
+        },
         _ => Err(Error::new(format!(
             "exit {label} must speak shadowsocks with {CIPHER}"
         ))),
