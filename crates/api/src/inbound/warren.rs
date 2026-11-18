@@ -5,8 +5,8 @@ use crate::host::Journal;
 use crate::manifest::Loaded;
 use crate::outbound::{Book, Circuit, Fence, Passage, Roster};
 use dynet_core::{
-    Bearing, Cluster, Decision, Domain, Error, Form, Instance, Label, Ledger, Name, Policy,
-    Selector, Sight, Verdict, decide, usable,
+    Bearing, Cluster, Decision, Domain, Error, Form, Instance, Label, Ledger, Manifest, Name,
+    Policy, Selector, Sight, Verdict, decide, usable,
 };
 use std::collections::HashMap;
 use std::net::{TcpListener, UdpSocket};
@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-pub type Pools = HashMap<Name, Mutex<Selector>>;
+type Rank = Arc<Mutex<Selector>>;
+pub type Pools = HashMap<Name, Rank>;
 
 const HALF: Duration = Duration::from_secs(600);
 const FLOOR: f64 = 0.05;
@@ -31,9 +32,9 @@ pub struct Served {
 
 #[derive(Clone, Debug)]
 pub struct Charge {
-    pub cluster: Name,
-    pub label: Label,
-    pub bearing: Bearing,
+    rank: Rank,
+    label: Label,
+    bearing: Bearing,
 }
 
 pub struct Chosen {
@@ -83,13 +84,18 @@ impl Held {
         let policy = Policy::new(HALF, FLOOR)?;
         let now = Instant::now();
         let mut pools = Pools::new();
-        for cluster in loaded.manifest().clusters() {
-            if !matches!(cluster.form(), Form::Pool(_)) {
-                continue;
+        let manifest = loaded.manifest();
+        for cluster in manifest.clusters() {
+            let rank = earlier
+                .and_then(|held| held.kept(cluster, manifest))
+                .or_else(|| {
+                    ranked(manifest, cluster, policy, now)
+                        .map(Mutex::new)
+                        .map(Arc::new)
+                });
+            if let Some(rank) = rank {
+                pools.insert(cluster.name().clone(), rank);
             }
-            let kept = earlier.and_then(|held| held.kept(cluster));
-            let selector = kept.unwrap_or_else(|| Selector::new(cluster, policy, now));
-            pools.insert(cluster.name().clone(), Mutex::new(selector));
         }
         let fence = earlier
             .filter(|held| !held.paused && !held.fence.closed())
@@ -105,16 +111,38 @@ impl Held {
         })
     }
 
-    fn kept(&self, cluster: &Cluster) -> Option<Selector> {
-        let standing = self.loaded.manifest().cluster(cluster.name())?;
-        if standing.nodes() != cluster.nodes() {
-            return None;
+    fn kept(&self, cluster: &Cluster, manifest: &Manifest) -> Option<Rank> {
+        let prior = self.loaded.manifest();
+        let standing = prior.cluster(cluster.name())?;
+        match cluster.form() {
+            Form::Pool(_) if standing.nodes() == cluster.nodes() => {}
+            Form::Via(front, exit) if standing == cluster => {
+                usable(manifest, cluster.name(), Bearing::Datagram).ok()?;
+                if prior.cluster(front)? != manifest.cluster(front)?
+                    || prior.node(exit)? != manifest.node(exit)?
+                {
+                    return None;
+                }
+            }
+            _ => return None,
         }
-        self.pools
-            .get(cluster.name())?
-            .lock()
-            .ok()
-            .map(|held| held.clone())
+        self.pools.get(cluster.name()).cloned()
+    }
+}
+
+fn ranked(
+    manifest: &Manifest,
+    cluster: &Cluster,
+    policy: Policy,
+    now: Instant,
+) -> Option<Selector> {
+    match cluster.form() {
+        Form::Pool(_) => Some(Selector::new(cluster, policy, now)),
+        Form::Via(front, _) => {
+            usable(manifest, cluster.name(), Bearing::Datagram).ok()?;
+            Some(Selector::relay(manifest.cluster(front)?, policy, now))
+        }
+        Form::Alias(_) => None,
     }
 }
 
@@ -165,10 +193,15 @@ impl Warren<'_> {
             Form::Via(front, exit) => (front, Some(exit)),
             Form::Alias(_) => return None,
         };
-        let label = chosen(&held.pools, front, bearing)?;
+        let pool = match (exit, bearing) {
+            (Some(_), Bearing::Datagram) => cluster.name(),
+            _ => front,
+        };
+        let rank = held.pools.get(pool)?.clone();
+        let label = rank.lock().ok()?.choose(bearing, Instant::now())?;
         let endpoint = roster.posted(&label, self.book, &held.upstream).ok()?;
         let charge = Some(Charge {
-            cluster: front.clone(),
+            rank,
             label: label.clone(),
             bearing,
         });
@@ -199,26 +232,14 @@ impl Warren<'_> {
     }
 }
 
-pub fn observed(warren: &Warren, charge: Option<&Charge>, verdict: Verdict) {
+pub fn observed(charge: Option<&Charge>, verdict: Verdict) {
     let Some(charge) = charge else {
         return;
     };
-    let held = warren.current();
-    let Some(selector) = held.pools.get(&charge.cluster) else {
-        return;
-    };
-    let Ok(mut pool) = selector.lock() else {
+    let Ok(mut pool) = charge.rank.lock() else {
         return;
     };
     pool.observed(&charge.label, charge.bearing, verdict, Instant::now());
-}
-
-fn chosen(pools: &Pools, wanted: &Name, bearing: Bearing) -> Option<Label> {
-    pools
-        .get(wanted)?
-        .lock()
-        .ok()?
-        .choose(bearing, Instant::now())
 }
 
 pub fn stand(warren: &Warren, span: Duration, socket: &(UdpSocket, TcpListener)) {

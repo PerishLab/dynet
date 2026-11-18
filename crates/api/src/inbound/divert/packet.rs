@@ -3,6 +3,9 @@ use std::net::Ipv4Addr;
 
 pub(super) fn ends(packet: &Ipv4Packet<&[u8]>, borne: bool) -> Option<(u16, u16)> {
     if borne {
+        if packet.more_frags() || packet.frag_offset() != 0 {
+            return None;
+        }
         let dart = UdpPacket::new_checked(packet.payload()).ok()?;
         return Some((dart.src_port(), dart.dst_port()));
     }

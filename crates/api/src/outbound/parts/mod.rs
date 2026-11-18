@@ -93,11 +93,13 @@ impl Read for Ingress {
 pub enum Speaker {
     Plain(Egress),
     Veiled(Egress, Box<Cloak>),
+    Relayed(Egress, Box<Cloak>),
 }
 
 pub enum Listener {
     Plain(Ingress),
     Veiled(Ingress, Box<Shroud>),
+    Relayed(Ingress, Box<Shroud>, uot::Frames),
 }
 
 impl Speaker {
@@ -105,12 +107,15 @@ impl Speaker {
         match self {
             Self::Plain(egress) => egress.send(body),
             Self::Veiled(egress, cloak) => cloak.send(egress, body),
+            Self::Relayed(egress, cloak) => cloak.send(egress, &uot::frame(body)?),
         }
     }
 
     pub fn done(&mut self) -> Result<(), Error> {
         match self {
-            Self::Plain(egress) | Self::Veiled(egress, _) => egress.done(),
+            Self::Plain(egress) | Self::Veiled(egress, _) | Self::Relayed(egress, _) => {
+                egress.done()
+            }
         }
     }
 }
@@ -120,12 +125,15 @@ impl Listener {
         match self {
             Self::Plain(ingress) => ingress.receive(),
             Self::Veiled(ingress, shroud) => shroud.receive(ingress),
+            Self::Relayed(ingress, shroud, frames) => frames.receive(|| shroud.receive(ingress)),
         }
     }
 
     pub fn fault(&self) -> Option<Fault> {
         match self {
-            Self::Plain(ingress) | Self::Veiled(ingress, _) => ingress.fault(),
+            Self::Plain(ingress) | Self::Veiled(ingress, _) | Self::Relayed(ingress, _, _) => {
+                ingress.fault()
+            }
         }
     }
 }
@@ -133,6 +141,7 @@ impl Listener {
 mod fence;
 mod front;
 mod passage;
+mod uot;
 pub use fence::{Circuit, Fence};
 pub use front::{Exit, Front};
 pub use passage::Passage;

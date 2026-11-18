@@ -10,6 +10,7 @@ pub struct Exit {
     pub host: String,
     pub port: u16,
     pub secret: [u8; 16],
+    pub relay: bool,
 }
 
 pub enum Front {

@@ -70,6 +70,21 @@ fn vouches() {
 }
 
 #[test]
+fn relay() {
+    let label = Label::new("lisa/exit").unwrap();
+    let mut value = base();
+    let loaded = load(&value.to_string()).unwrap();
+    assert!(!Roster::new(loaded.entries(), 0).exit(&label).unwrap().relay);
+    value["nodes"][1]["uot"] = json!(2);
+    let loaded = load(&value.to_string()).unwrap();
+    assert!(Roster::new(loaded.entries(), 0).exit(&label).unwrap().relay);
+    refused(
+        |value| value["nodes"][1]["uot"] = json!(true),
+        "requires UoT version 2",
+    );
+}
+
+#[test]
 fn boarding() {
     let label = Label::new("zx/tunnel").expect("label");
     let loaded = load(&base().to_string()).expect("manifest");

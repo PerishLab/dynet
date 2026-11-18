@@ -215,6 +215,31 @@ fn rows() {
 }
 
 #[test]
+fn relay() {
+    let mut value = base();
+    value["nodes"][3]["uot"] = json!(2);
+    value["nodes"][1]["udp"] = json!(false);
+    let held = decided(&value, None, HELD, Bearing::Datagram);
+    assert_eq!(held.course(), &Course::Through(name("veiled")));
+    let front = decided(
+        &value,
+        Told::read("cdn.example.com", false),
+        PLAIN,
+        Bearing::Datagram,
+    );
+    assert_eq!(
+        front.course(),
+        &Course::Refused(name("shared"), Refusal::Unborne)
+    );
+    value["drain"] = json!({"nodes": ["lisa.us-02/exit"]});
+    let drained = decided(&value, None, HELD, Bearing::Datagram);
+    assert_eq!(
+        drained.course(),
+        &Course::Refused(name("veiled"), Refusal::Empty)
+    );
+}
+
+#[test]
 fn refusals() {
     let value = base();
     let unborne = decided(&value, None, HELD, Bearing::Datagram);
