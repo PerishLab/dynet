@@ -135,6 +135,7 @@ pub fn usable(manifest: &Manifest, name: &Name, bearing: Bearing) -> Result<(), 
             usable(manifest, front, Bearing::Stream)?;
             match bearing {
                 Bearing::Stream => Ok(()),
+                Bearing::Datagram if manifest.node(exit).is_some_and(|node| node.relay()) => Ok(()),
                 Bearing::Datagram => Err(Refusal::Unborne),
             }
         }

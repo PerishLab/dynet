@@ -10,6 +10,7 @@ const CAPACITY: usize = 4096;
 pub(crate) struct Held {
     pub(crate) caller: SocketAddrV4,
     pub(crate) target: SocketAddrV4,
+    pub(crate) borne: bool,
 }
 
 struct Kept {
@@ -132,6 +133,7 @@ mod tests {
 
     fn held(port: u16) -> Held {
         Held {
+            borne: false,
             caller: SocketAddrV4::new([127, 0, 0, 1].into(), port),
             target: SocketAddrV4::new([1, 1, 1, 1].into(), 443),
         }
@@ -161,6 +163,26 @@ mod tests {
         roll.claim(held(1)).unwrap();
         assert_eq!(roll.reap(), 1);
         assert_eq!(roll.standing(), 0);
+    }
+
+    #[test]
+    fn transport() {
+        let mut roll = Roll::new();
+        let stream = held(1);
+        let dart = Held {
+            borne: true,
+            ..stream
+        };
+        let (first, _) = roll.claim(stream).unwrap();
+        let (second, _) = roll.claim(dart).unwrap();
+        assert_ne!(first, second);
+        roll.begin(first);
+        roll.begin(second);
+        roll.end(second);
+        roll.kept.get_mut(&second).unwrap().ended = Some(Instant::now() - IDLE);
+        assert_eq!(roll.reap(), 1);
+        assert_eq!(roll.recall(first), Some(stream));
+        assert_eq!(roll.recall(second), None);
     }
 
     #[test]

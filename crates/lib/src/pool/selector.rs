@@ -70,6 +70,12 @@ impl Selector {
         Self { policy, ranks }
     }
 
+    pub fn relay(cluster: &Cluster, policy: Policy, now: Instant) -> Self {
+        let rank = Rank::new(cluster, Bearing::Stream, now);
+        let ranks = BTreeMap::from([(Bearing::Datagram, rank)]);
+        Self { policy, ranks }
+    }
+
     pub fn policy(&self) -> Policy {
         self.policy
     }

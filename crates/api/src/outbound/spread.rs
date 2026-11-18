@@ -193,6 +193,7 @@ impl<'a> Roster<'a> {
                 .to_string(),
             port: port(entry)?,
             secret,
+            relay: entry.field("uot") == Some("2"),
         })
     }
 

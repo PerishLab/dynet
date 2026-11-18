@@ -202,8 +202,7 @@ Service installation captures only the executable, resolved absolute bootstrap,
 state root and machine facts. Neither the private key nor any node credential
 appears in the registration. The existing macOS and Windows capture boundaries,
 explicit teardown and automatic startup remain as documented in AGENTS.md.
-Application DoH, independently obtained IPv6 and new UDP capabilities are
-separate work.
+Application DoH and independently obtained IPv6 are separate work.
 
 Cutover is an explicit operation, not a compatibility layer. Before first start,
 stop the old service while retaining its protection, preserve its issued-address
@@ -213,6 +212,25 @@ new service and its exact distribution, then delete the former plaintext
 manifest and obsolete files. A remaining `<state>/<instance>.ledger` refuses a
 new start so a missed migration cannot silently release issued addresses. There
 is no old-format reader, historical-directory discovery or plaintext fallback.
+
+## Two-hop UDP
+
+A Shadowsocks 2022 exit with `"uot": 2` in the encrypted manifest enables
+IPv4 UDP on its `via` cluster. The front opens its ordinary authenticated
+stream to the exit. The exit then opens a sing-box UoT v2 connected stream
+for the original destination. A plain VLESS front still carries streams only.
+An absent declaration leaves the cluster's UDP path refused. A disabled,
+drained or failed path cannot fall back to direct UDP.
+
+The diverter keys TCP and UDP mappings separately and rejects fragmented IPv4
+UDP. Each UDP association holds one destination and uses the shared connection
+budget, bounded channels and circuit cancellation. UoT responses are delivered
+only as complete datagrams within the IPv4 payload limit. A relay cluster
+records its UDP results separately from the front pool's stream results.
+
+Dynet #149 owns formal release qualification and Windows consumption.
+OpenWrt traffic admission also needs a candidate APK, gateway forwarding
+checks and an independent WAN observation during proxy failure.
 
 ## Refusal reporting
 

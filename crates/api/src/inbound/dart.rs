@@ -60,7 +60,7 @@ impl Divert<'_> {
         let Ok(peer) = stream.peer_addr() else {
             return;
         };
-        let Some(held) = self.recall(peer.port()) else {
+        let Some(held) = self.recall(peer.port(), false) else {
             return;
         };
         self.begin(peer.port());
@@ -96,7 +96,7 @@ impl Divert<'_> {
         let Some(verdict) = link.verdict() else {
             return;
         };
-        warren::observed(self.warren, charge, verdict);
+        warren::observed(charge, verdict);
         (self.told())(&format!("verdict {verdict:?}"));
         match matches!(verdict, Verdict::Faulted(_)) {
             true => self.tally(|served| served.faulted += 1),
@@ -149,7 +149,7 @@ impl Divert<'_> {
     }
 
     fn open(&self, peer: SocketAddr, held: &Flock) -> Option<(Link, Charge)> {
-        let kept = self.recall(peer.port())?;
+        let kept = self.recall(peer.port(), true)?;
         self.begin(peer.port());
         let Some(chosen) = self.choose(kept.target) else {
             self.tally(|served| served.refused += 1);
@@ -198,14 +198,15 @@ impl Divert<'_> {
         let (charge, borne) = told;
         match link.bide(patience) {
             Taken::Body(body) => {
+                if !link.allow(|| darts.send_to(&body, peer).is_ok()) {
+                    return None;
+                }
                 if !*borne {
                     *borne = true;
                     self.answer(charge);
                 }
-                link.allow(|| darts.send_to(&body, peer).is_ok()).then(|| {
-                    touch(held, peer.port());
-                    IDLE
-                })
+                touch(held, peer.port());
+                Some(IDLE)
             }
             Taken::Spent => None,
             Taken::Empty => self.rest(held, peer),
@@ -221,7 +222,7 @@ impl Divert<'_> {
     }
 
     fn answer(&self, charge: &Charge) {
-        warren::observed(self.warren, Some(charge), Verdict::Answered);
+        warren::observed(Some(charge), Verdict::Answered);
         (self.told())("answered");
         self.tally(|served| served.answered += 1);
     }
