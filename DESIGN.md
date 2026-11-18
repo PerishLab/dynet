@@ -245,7 +245,16 @@ flush pending summaries; process abort may lose the unfinished window. These
 statistics are not a durable audit. A counter failure reports unknown counts
 once and does not alter refusal. Formatting sinks run outside the data lock.
 Other refusals, stream failures, startup, control and protection events retain
-their existing reporting. No packet, route or fallback decision changes.
+their existing reporting.
+
+The diverter returns ICMPv4 Port Unreachable for a new, captured, eligible
+unicast UDP flow when the route is explicitly unborne or direct UDP is
+unsupported. It addresses the reply to the caller and quotes the original
+IPv4 header with options and the first eight bytes of UDP. Multicast,
+broadcast-looking addresses, fragments, malformed headers and unassociated UDP
+ports receive no feedback. At most 16 replies are emitted per diverter window
+of one second. Further requests still follow the refusal policy. The ICMP
+message is local feedback through the device and never opens a route.
 
 ## Resolver transport
 

@@ -61,6 +61,10 @@ impl Roll {
         Some((spare, true))
     }
 
+    pub(super) fn contains(&self, held: &Held) -> bool {
+        self.spare.contains_key(held)
+    }
+
     pub(super) fn recall(&self, spare: u16) -> Option<Held> {
         self.kept.get(&spare).map(|kept| kept.held)
     }

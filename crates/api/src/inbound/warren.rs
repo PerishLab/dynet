@@ -165,6 +165,15 @@ impl Warren<'_> {
         Some((decision, selection))
     }
 
+    pub fn inspect(&self, sight: &Sight) -> Option<Decision> {
+        let ledger = self.ledger.lock().ok()?;
+        let held = self.current();
+        if held.paused || held.fence.closed() {
+            return None;
+        }
+        Some(decide(held.loaded.manifest(), &ledger, sight))
+    }
+
     fn selection(&self) -> Option<Selection> {
         let held = self.current();
         if held.paused {

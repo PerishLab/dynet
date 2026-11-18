@@ -1,7 +1,7 @@
 mod budget;
 pub(super) use budget::Budget;
 mod packet;
-use packet::{ends, write};
+use packet::{Allowance, ends, write};
 mod noise;
 mod peek;
 use noise::Noise;
@@ -117,6 +117,7 @@ impl Divert<'_> {
         let started = Instant::now();
         let mut swept = Duration::ZERO;
         let mut heeded = Duration::ZERO;
+        let mut allowance = Allowance::new(started);
         while lasting(started, span) && !self.warren.halted() {
             let since = started.elapsed();
             if since >= swept + SWEEP {
@@ -140,6 +141,9 @@ impl Divert<'_> {
                 continue;
             };
             let carried = &mut room[..size];
+            if self.reply(device, carried, &mut allowance) {
+                continue;
+            }
             if self.turn(carried) {
                 let _ = device.send(carried);
             }
