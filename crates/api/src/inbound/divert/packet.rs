@@ -1,3 +1,6 @@
+mod reply;
+pub(super) use reply::Allowance;
+
 use smoltcp::wire::{IpAddress, Ipv4Packet, TcpPacket, UdpPacket};
 use std::net::Ipv4Addr;
 

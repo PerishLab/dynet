@@ -1,7 +1,7 @@
 use super::Divert;
 use super::noise::Key;
 use crate::inbound::warren::Chosen;
-use dynet_core::{Bearing, Course, Ground, Refusal, Sight};
+use dynet_core::{Bearing, Course, Decision, Ground, Refusal, Sight};
 use std::net::{IpAddr, SocketAddrV4};
 
 impl Divert<'_> {
@@ -38,6 +38,15 @@ impl Divert<'_> {
                 ));
                 Some((self.warren.direct(selection)?, aimed))
             }
+            Course::Direct | Course::Refused(..) => {
+                self.refused(target, &decision, sight.bearing);
+                None
+            }
+        }
+    }
+
+    pub(super) fn refused(&self, target: SocketAddrV4, decision: &Decision, bearing: Bearing) {
+        match decision.course() {
             Course::Direct => {
                 let line = || {
                     format!(
@@ -50,7 +59,6 @@ impl Divert<'_> {
                 } else {
                     (self.told())(&line());
                 }
-                None
             }
             Course::Refused(cluster, refusal) => {
                 let line = || {
@@ -60,7 +68,7 @@ impl Divert<'_> {
                         cluster.get()
                     )
                 };
-                if sight.bearing == Bearing::Datagram && matches!(refusal, Refusal::Unborne) {
+                if bearing == Bearing::Datagram && matches!(refusal, Refusal::Unborne) {
                     self.noise.refuse(
                         Key::Unborne(cluster.clone(), target.port()),
                         line,
@@ -69,8 +77,8 @@ impl Divert<'_> {
                 } else {
                     (self.told())(&line());
                 }
-                None
             }
+            Course::Through(_) => {}
         }
     }
 
