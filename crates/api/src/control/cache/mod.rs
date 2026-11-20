@@ -1,4 +1,6 @@
 mod checkpoint;
+mod origins;
+pub(crate) use origins::Scope;
 mod seed;
 use super::{Candidate, Decoder, Incoming, custody, refused};
 pub use checkpoint::Checkpoint;
@@ -17,6 +19,7 @@ pub struct Cache {
     root: PathBuf,
     private: Private,
     checkpoint: Mutex<Checkpoint>,
+    origins: Mutex<origins::Origins>,
     _lock: File,
 }
 
@@ -53,6 +56,7 @@ impl Cache {
         checkpoint.check(&trust)?;
         Ok(Self {
             root: root.to_owned(),
+            origins: Mutex::new(origins::Origins::open(root, &private)?),
             private,
             checkpoint: Mutex::new(checkpoint),
             _lock: lock,

@@ -273,6 +273,13 @@ are.
   Refusing the sixth version for every name would make a whole network's
   destinations fourth-version-only on the strength of carrying a dozen of them.
 
+- An address lookup claimed by a rule holds its original cluster through
+  CNAME and DNAME resolution. Issue reachable IPv4 addresses at the original
+  question name after route capture and journal confirmation. Direct and
+  managed chains both supply expiring alias evidence. A shared target with
+  incompatible live owners refuses, including after restart. Managed answers
+  clear AD; independent direct names retain ordinary upstream DNS.
+
 - A forwarded connection the kernel hands over already carries its own
   destination: a transparent seat reads it from the socket's own local address,
   so there is no synthetic peer to rewrite onto, no session to remember and no
