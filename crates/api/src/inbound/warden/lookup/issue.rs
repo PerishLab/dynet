@@ -73,7 +73,10 @@ impl Post<'_> {
         }
         Ok(Issuance {
             accepted: true,
-            text: format!("{} issued {} addresses", root.get(), chain.addresses.len()),
+            text: match call.cluster {
+                Some(_) => format!("{} gave {} addresses", root.get(), chain.addresses.len()),
+                None => format!("{} left to the upstream", root.get()),
+            },
         })
     }
 }

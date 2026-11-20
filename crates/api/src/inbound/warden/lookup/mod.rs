@@ -8,7 +8,11 @@ use std::time::{Duration, Instant};
 
 impl Post<'_> {
     pub(super) fn metadata(&self, call: &Call, cluster: &Name) -> Result<String, Error> {
-        let (_, framed) = self.carry(&Packet::new(&call.asked).frame()?, cluster)?;
+        let (node, framed) = self.carry(&Packet::new(&call.asked).frame()?, cluster)?;
+        (self.warren.told)(&format!(
+            "{} asked for type {} through {node}",
+            call.query.name, call.query.kind
+        ));
         let reply = framed
             .get(2..)
             .ok_or_else(|| Error::new("incomplete DNS reply"))?;
@@ -37,7 +41,7 @@ impl Post<'_> {
         if send {
             self.refuse(call, &reason)
         } else {
-            Ok(reason)
+            Err(Error::new(reason))
         }
     }
 
@@ -68,6 +72,11 @@ impl Post<'_> {
                 break (node, reply);
             }
             if let Some(target) = next {
+                (self.warren.told)(&format!(
+                    "{} names {} through {node}",
+                    call.query.name,
+                    target.get()
+                ));
                 if target == root {
                     return Err(Error::new("cyclic DNS alias"));
                 }
@@ -101,6 +110,12 @@ impl Post<'_> {
             self.warren
                 .store
                 .keep(key.clone(), chain, Duration::from_secs(u64::from(life)));
+        }
+        if !send && (!said.accepted || life == 0) {
+            return Err(Error::new(format!(
+                "{} through {node}, no reusable answer",
+                said.text
+            )));
         }
         Ok(format!(
             "{} through {node} in {}",

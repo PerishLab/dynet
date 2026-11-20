@@ -115,11 +115,23 @@ impl Post<'_> {
             }
             let reply = chain.project(&call.asked, query)?;
             let said = self.issue(call, &chain, Some(&reply))?;
-            if refresh && let Err(error) = self.lookup(call, &key, false) {
-                self.warren.store.missed(&key);
-                return Ok(format!("{}; refresh refused: {error}", said.text));
+            if !refresh {
+                return Ok(format!("{} from memory", said.text));
             }
-            return Ok(said.text);
+            if !said.accepted {
+                self.warren.store.missed(&key);
+                return Ok(said.text);
+            }
+            return match self.lookup(call, &key, false) {
+                Ok(outcome) => Ok(format!("{} from memory, refresh: {outcome}", said.text)),
+                Err(error) => {
+                    self.warren.store.missed(&key);
+                    Ok(format!(
+                        "{} from memory, refresh refused: {error}",
+                        said.text
+                    ))
+                }
+            };
         }
         self.lookup(call, &key, true)
     }
