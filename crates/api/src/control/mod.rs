@@ -7,6 +7,7 @@ mod projection;
 mod session;
 mod worker;
 
+pub(crate) use cache::Scope;
 pub use cache::{Cache, Checkpoint};
 pub use candidate::{Candidate, Decoder, Incoming};
 pub use dynet_host::Private;

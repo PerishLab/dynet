@@ -1,5 +1,6 @@
 mod admission;
 mod call;
+mod lookup;
 #[cfg(test)]
 mod tests;
 use admission::Admission;
@@ -12,17 +13,16 @@ mod wire;
 use super::store::{Key, Recall};
 use super::warren::{self, Warren};
 use crate::host::clock;
-use crate::resolver::{self, Answer, Packet, Query};
+use crate::resolver::{Chain, Packet};
 use dynet_core::{Bearing, Domain, Error, Name, Verdict};
 use reply::Reply;
-use std::net::{IpAddr, TcpListener, UdpSocket};
+use std::net::{TcpListener, UdpSocket};
 use std::time::Duration;
-use wire::{capture, spare, through};
+use wire::through;
 
 const REST: Duration = Duration::from_millis(200);
 const ROOM: usize = 1500;
 const TRIES: usize = 3;
-const MARK: u16 = 0x7a7a;
 
 struct Post<'a> {
     warren: &'a Warren<'a>,
@@ -69,125 +69,59 @@ impl Post<'_> {
     fn settle(&self, call: &Call) -> Result<String, Error> {
         let asking = Packet::new(&call.asked);
         let query = &call.query;
-        if query.hints() {
-            return self.limited(&asking, call, query);
+        let admission = self.issue(call, &Chain::default(), None)?;
+        if !admission.accepted {
+            return self.refuse(call, &admission.text);
         }
-        let domain = Domain::new(&query.name)?;
         let Some(cluster) = &call.cluster else {
-            let plain = self.reply.relay(self.warren, call)?;
-            self.speak(&plain, call)?;
-            return Ok(format!("{} left to the upstream", query.name));
+            let mut reply = self.reply.relay(self.warren, call)?;
+            let mut chain = Chain::default();
+            chain.extend(&call.asked, &reply, clock())?;
+            if reply[2] & 2 != 0 {
+                reply = asking.barren(query);
+                reply[2] |= 2;
+            }
+            return self
+                .issue(call, &chain, Some(&reply))
+                .map(|outcome| outcome.text);
         };
+        if call.asked[query.span - 2..query.span] != [0, 1] {
+            return self.refuse(call, "unsupported managed DNS class");
+        }
+        if query.hints() {
+            return self
+                .issue(call, &Chain::default(), Some(&asking.barren(query)))
+                .map(|outcome| outcome.text);
+        }
+        if matches!(query.kind, 5 | 39 | 255) {
+            return self.refuse(call, "explicit alias inspection under a managed rule");
+        }
+        if query.kind != 1 {
+            return self.metadata(call, cluster);
+        }
         let key = Key {
             stamp: call.stamp.clone(),
-            name: query.name.clone(),
+            name: Domain::new(&query.name)?.get().to_owned(),
             cluster: cluster.clone(),
         };
         if let Recall::Known {
-            reply,
+            mut chain,
             aged,
             refresh,
         } = self.warren.store.recall(&key)
         {
-            let found = resolver::read(&reply)?;
-            self.assure(&domain, &found, cluster)?;
-            let mark = u16::from_be_bytes([call.asked[0], call.asked[1]]);
-            self.speak(&resolver::renew(&reply, mark, aged)?, call)?;
-            return self.after(&key, &domain, refresh);
-        }
-        let framed = asking.frame()?;
-        let (label, carried) = self.carry(&framed, cluster)?;
-        let Some(reply) = spare(&carried)? else {
-            self.speak(&asking.failed(query), call)?;
-            return Ok(format!(
-                "{} through {label} answered reserved addresses alone, which are left out; failed",
-                query.name
-            ));
-        };
-        let found = resolver::read(&reply)?;
-        let told = self.keep(&domain, &found, cluster)?;
-        self.remember(&key, &reply, &found);
-        self.speak(&reply, call)?;
-        Ok(format!(
-            "{} through {label} to cluster {} gave {told}",
-            query.name,
-            cluster.get()
-        ))
-    }
-
-    fn limited(&self, asking: &Packet, call: &Call, query: &Query) -> Result<String, Error> {
-        if call.cluster.is_some() {
-            self.speak(&asking.barren(query), call)?;
-            return Ok(format!(
-                "{} asked for type {}, answered none because this carries it",
-                query.name, query.kind
-            ));
-        }
-        let plain = self.reply.relay(self.warren, call)?;
-        self.speak(&plain, call)?;
-        Ok(format!(
-            "{} asked for type {}, left to the upstream",
-            query.name, query.kind
-        ))
-    }
-
-    fn after(&self, key: &Key, domain: &Domain, refresh: bool) -> Result<String, Error> {
-        if !refresh {
-            return Ok(format!("{} from memory", key.name));
-        }
-        match self.again(key, domain) {
-            Ok(label) => Ok(format!(
-                "{} from memory, refreshed through {label}",
-                key.name
-            )),
-            Err(error) => {
-                let spent = self.warren.store.missed(key);
-                Ok(format!(
-                    "{} from memory, refresh {spent} failed: {error}",
-                    key.name
-                ))
+            for item in &mut chain.addresses {
+                item.life = item.life.saturating_sub(aged).max(1);
             }
-        }
-    }
-
-    fn assure(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<(), Error> {
-        let ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
-        let live = found.iter().all(|item| {
-            ledger
-                .lookup(IpAddr::V4(item.address))
-                .is_some_and(|issue| !issue.released())
-        });
-        if live {
-            for item in found {
-                capture(self.warren.instance, IpAddr::V4(item.address))?;
+            let reply = chain.project(&call.asked, query)?;
+            let said = self.issue(call, &chain, Some(&reply))?;
+            if refresh && let Err(error) = self.lookup(call, &key, false) {
+                self.warren.store.missed(&key);
+                return Ok(format!("{}; refresh refused: {error}", said.text));
             }
-            self.warren.journal.save(&ledger)?;
-            return Ok(());
+            return Ok(said.text);
         }
-        drop(ledger);
-        self.keep(domain, found, cluster)?;
-        Ok(())
-    }
-
-    fn again(&self, key: &Key, domain: &Domain) -> Result<String, Error> {
-        let asking = resolver::ask(&key.name, MARK)?;
-        let (label, framed) = self.carry(&asking, &key.cluster)?;
-        let reply = spare(&framed)?
-            .ok_or_else(|| Error::new("the refreshed answer held reserved addresses alone"))?;
-        let found = resolver::read(&reply)?;
-        self.keep(domain, &found, &key.cluster)?;
-        self.remember(key, &reply, &found);
-        Ok(label)
-    }
-
-    fn remember(&self, key: &Key, reply: &[u8], found: &[Answer]) {
-        let life = found.iter().map(|item| u64::from(item.life)).min();
-        let Some(life) = life else {
-            return;
-        };
-        self.warren
-            .store
-            .keep(key.clone(), reply.to_vec(), Duration::from_secs(life));
+        self.lookup(call, &key, true)
     }
 
     fn speak(&self, body: &[u8], call: &Call) -> Result<(), Error> {
@@ -198,25 +132,6 @@ impl Post<'_> {
         call.circuit
             .allow(|| self.reply.send(body, call.peer))?
             .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))
-    }
-
-    fn keep(&self, domain: &Domain, found: &[Answer], cluster: &Name) -> Result<usize, Error> {
-        let life = found.iter().map(|item| u64::from(item.life)).max();
-        let told = (life.unwrap_or_default(), clock());
-        let mut ledger = self.warren.ledger.lock().map_err(|_| poisoned())?;
-        let mut held = 0;
-        for item in found {
-            let address = IpAddr::V4(item.address);
-            if ledger.record(address, (domain, cluster), told) {
-                self.warren.journal.stain();
-                capture(self.warren.instance, address)?;
-                held += 1;
-            }
-        }
-        self.warren.journal.save(&ledger)?;
-        drop(ledger);
-        self.warren.journal.stain();
-        Ok(held)
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {

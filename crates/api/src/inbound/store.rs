@@ -1,3 +1,4 @@
+use crate::resolver::Chain;
 use dynet_core::Name;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -15,7 +16,7 @@ pub struct Key {
 
 #[derive(Clone, Debug)]
 struct Kept {
-    reply: Vec<u8>,
+    chain: Chain,
     born: Instant,
     life: Duration,
     busy: bool,
@@ -24,7 +25,7 @@ struct Kept {
 
 pub enum Recall {
     Known {
-        reply: Vec<u8>,
+        chain: Chain,
         aged: u32,
         refresh: bool,
     },
@@ -55,24 +56,28 @@ impl Store {
             return Recall::Absent;
         };
         let aged = kept.born.elapsed();
+        if !kept.chain.links.is_empty() && aged >= kept.life {
+            held.remove(key);
+            return Recall::Absent;
+        }
         let ripe = aged.as_secs_f64() >= kept.life.as_secs_f64() * EARLY;
         let refresh = ripe && !kept.busy;
         kept.busy |= refresh;
         Recall::Known {
-            reply: kept.reply.clone(),
+            chain: kept.chain.clone(),
             aged: u32::try_from(aged.as_secs()).unwrap_or(u32::MAX),
             refresh,
         }
     }
 
-    pub fn keep(&self, key: Key, reply: Vec<u8>, life: Duration) {
+    pub fn keep(&self, key: Key, chain: Chain, life: Duration) {
         let Ok(mut held) = self.held.lock() else {
             return;
         };
         held.insert(
             key,
             Kept {
-                reply,
+                chain,
                 born: Instant::now(),
                 life,
                 busy: false,

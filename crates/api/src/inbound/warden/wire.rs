@@ -1,27 +1,13 @@
 use crate::host::Route;
 use crate::inbound::warren::Chosen;
 use crate::outbound::Listener;
-use crate::resolver::{self};
-use dynet_core::{Error, Fault, spared};
+use dynet_core::{Error, Fault};
 use std::net::IpAddr;
 
 pub(super) fn through(chosen: &Chosen, upstream: &str, framed: &[u8]) -> Result<Vec<u8>, Fault> {
     let (mut speaker, mut listener) = chosen.passage.open(upstream, 53)?;
     speaker.send(framed).map_err(|_| Fault::Severed)?;
     gather(&mut listener).map_err(|_| listener.fault().unwrap_or(Fault::Silent))
-}
-
-pub(super) fn spare(framed: &[u8]) -> Result<Option<Vec<u8>>, Error> {
-    let reply = framed
-        .get(2..)
-        .ok_or_else(|| Error::new("the upstream answer carried no body"))?;
-    let Some(pruned) = resolver::prune(reply, |address| spared(IpAddr::V4(address)))? else {
-        return Ok(Some(reply.to_vec()));
-    };
-    match resolver::read(&pruned)?.is_empty() {
-        true => Ok(None),
-        false => Ok(Some(pruned)),
-    }
 }
 
 pub(super) fn capture(instance: &dynet_core::Instance, address: IpAddr) -> Result<(), Error> {

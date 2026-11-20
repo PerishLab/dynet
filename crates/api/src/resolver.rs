@@ -1,4 +1,7 @@
+mod chain;
 mod prune;
+mod records;
+pub use chain::Chain;
 
 use dynet_core::Error;
 use std::net::Ipv4Addr;
@@ -58,11 +61,17 @@ impl<'a> Packet<'a> {
             if size == 0 {
                 break;
             }
+            if size > 63 || cursor + size > 267 {
+                return Err(ragged());
+            }
             let label = packet.get(cursor..cursor + size).ok_or_else(ragged)?;
+            if label.contains(&b'.') {
+                return Err(ragged());
+            }
             labels.push(String::from_utf8_lossy(label).into_owned());
             cursor += size;
         }
-        let kind = packet.get(cursor..cursor + 2).ok_or_else(ragged)?;
+        let kind = packet.get(cursor..cursor + 4).ok_or_else(ragged)?;
         Ok(Query {
             name: labels.join("."),
             kind: u16::from_be_bytes([kind[0], kind[1]]),

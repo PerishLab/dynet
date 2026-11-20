@@ -311,3 +311,32 @@ the forwarder. Matching a name and time across those streams is an inference,
 not an exact client-to-flow identifier. Collector restarts may replay the shared
 syslog ring, and live exports may have rotation gaps or duplicates. Runtime
 files survive worker restarts but disappear at router reboot.
+
+## DNS alias ownership
+
+A managed address lookup follows reachable CNAME and DNAME edges under the
+original cluster. The resolver uses complete answers directly and asks for a
+missing hop through that same cluster. It bounds chains to sixteen edges.
+The published real IPv4 RRset belongs to the original question name and its
+lifetime includes every alias on the path. Only its reachable addresses enter
+the route ledger. Managed AAAA, HTTPS and SVCB retain the empty result.
+Explicit alias inspection and unrepresentable metadata receive REFUSED.
+Locally constructed answers clear AD; callers that require signed original
+RRsets or canonical-name visibility can observe the projection.
+
+Direct and named clusters contribute evidence at exact alias targets. Each
+binding records the origin, observed cluster, generation and expiry. New
+conflicting evidence is durably recorded before refusal. Recheck before
+publishing an answer, including a memory hit or refresh, under the ledger
+and policy locks that order configuration changes. Live historical origins are
+also checked against the current rule table. New evidence or expiry can change
+the decision. Independently obtained addresses and unobserved private DNS
+caches remain outside this contract.
+
+The private control directory retains origins/bindings and origins.enabled
+beside the existing checkpoint. New installations and upgrades initialize
+them on first evidence. An unreadable or missing initialized binding file
+refuses startup. Preserve the entire directory for backup and recovery.
+Existing address checkpoints retain their format for rollback. Older binaries
+retain address custody but do not enforce alias ownership. New runtimes can
+resume enforcement from unexpired bindings on return.
