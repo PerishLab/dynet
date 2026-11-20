@@ -65,7 +65,7 @@ fn data(body: &[u8], start: usize, raw: &[u8], kind: u16) -> Result<Data, Error>
             })
         }
         64 | 65 if raw.starts_with(&[0, 0]) => {
-            if raw.len() < 3 {
+            if raw.len() < 3 || skip(body, start + 2)? > start + raw.len() {
                 return Err(invalid());
             }
             Ok(Data::Alias(name(body, start + 2)?))
