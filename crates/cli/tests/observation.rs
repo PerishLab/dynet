@@ -143,3 +143,24 @@ fn parity() {
         assert_eq!(on.stdout, baseline.stdout, "{name}");
     }
 }
+
+#[test]
+fn https() {
+    let fixture = Fixture::new();
+    let seat = fixture.seat();
+    let key = seat.join("writer");
+    std::fs::write(&key, "fixture").unwrap();
+    let settings = format!(
+        "[locus]\nenabled = true\nendpoint = 'https://127.0.0.1:0'\nkey_file = {}\n",
+        serde_json::to_string(&key).unwrap()
+    );
+    fixture.configure(&settings);
+    assert!(fixture.run("reach").status.success());
+    let queue = seat.join("state/locus.https/dynet");
+    assert!(queue.join("queue.db").is_file());
+    let binding: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(queue.join("delivery.json")).unwrap()).unwrap();
+    assert_eq!(binding["producer"], "dynet");
+    assert_eq!(binding["key_file"], serde_json::to_value(&key).unwrap());
+    assert!(!seat.join("state/locus").exists());
+}
