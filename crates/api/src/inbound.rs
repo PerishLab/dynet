@@ -16,7 +16,9 @@ pub(crate) fn lasting(started: Instant, span: Duration) -> bool {
     span.is_zero() || started.elapsed() < span
 }
 
-pub use divert::divert;
+pub use divert::{divert, observe};
 pub use link::{Link, Taken};
 pub use store::Store;
+use warren::evidence;
+pub use warren::evidence::{Evidence, Reporter};
 pub use warren::{Charge, Held, Served, Warren};

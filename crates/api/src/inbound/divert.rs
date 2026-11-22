@@ -29,6 +29,7 @@ const HEED: Duration = Duration::from_secs(1);
 const CROWD: usize = 256;
 
 pub struct Divert<'a> {
+    pub(super) reporter: super::Reporter<'a>,
     pub(super) span: Span,
     pub(super) seat: u16,
     pub(super) dart: u16,
@@ -43,6 +44,14 @@ pub struct Divert<'a> {
 }
 
 pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, Error> {
+    observe(warren, ground, None)
+}
+
+pub fn observe(
+    warren: &Warren,
+    ground: (Span, Duration, u16),
+    reporter: super::Reporter<'_>,
+) -> Result<Served, Error> {
     let limit = Budget::capacity()?;
     let (span, patience, transit) = ground;
     let stage::Seats {
@@ -64,6 +73,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
     (warren.told)(&format!("diverting to {}:{seat} and :{dart}", span.seat()));
     (warren.told)(&format!("forwarding capacity {limit} concurrent sessions"));
     let divert = Divert {
+        reporter,
         span,
         seat,
         dart,
@@ -87,7 +97,7 @@ pub fn divert(warren: &Warren, ground: (Span, Duration, u16)) -> Result<Served, 
         let _ = seat;
     }
     let carried = std::thread::scope(|scope| {
-        scope.spawn(|| stand(warren, patience, &resolver));
+        scope.spawn(|| stand(warren, patience, &resolver, reporter));
         scope.spawn(|| divert.greet(&listener));
         scope.spawn(|| divert.flock(&darts));
         if let Some(seat) = &ushered {

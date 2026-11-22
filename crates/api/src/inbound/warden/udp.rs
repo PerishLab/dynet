@@ -1,12 +1,13 @@
 use super::super::lasting;
 use super::super::warren::Warren;
-use super::{Admission, Call, Packet, Post, ROOM, Reply};
+use super::{Admission, Call, Post, ROOM, Reply};
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 pub(super) fn attend(warren: &Warren, span: Duration, socket: &UdpSocket, admission: &Admission) {
     let post = Post {
         warren,
+        reporter: admission.reporter,
         reply: Reply::Datagram(socket),
     };
     let started = Instant::now();
@@ -21,8 +22,7 @@ pub(super) fn attend(warren: &Warren, span: Duration, socket: &UdpSocket, admiss
                 continue;
             };
             let Some(permit) = admission.enter(&call) else {
-                let reply = Packet::new(&call.asked).failed(&call.query);
-                let _ = post.speak(&reply, &call);
+                post.failed(&call);
                 continue;
             };
             let post = &post;

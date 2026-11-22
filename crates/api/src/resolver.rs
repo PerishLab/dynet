@@ -2,6 +2,7 @@ mod chain;
 mod prune;
 mod records;
 pub use chain::Chain;
+pub(crate) use chain::bindings;
 
 use dynet_core::Error;
 use std::net::Ipv4Addr;

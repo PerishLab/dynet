@@ -6,6 +6,7 @@ pub(super) enum Data {
     Alias(Domain),
     Tree(Domain),
     Address(Ipv4Addr),
+    Quad(std::net::Ipv6Addr),
     Other,
 }
 
@@ -52,6 +53,9 @@ fn data(body: &[u8], start: usize, raw: &[u8], kind: u16) -> Result<Data, Error>
     match kind {
         1 => Ok(Data::Address(Ipv4Addr::from(
             <[u8; 4]>::try_from(raw).map_err(|_| invalid())?,
+        ))),
+        28 if raw.len() == 16 => Ok(Data::Quad(std::net::Ipv6Addr::from(
+            <[u8; 16]>::try_from(raw).map_err(|_| invalid())?,
         ))),
         5 | 39 => {
             if skip(body, start)? != start + raw.len() {

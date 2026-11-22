@@ -304,6 +304,50 @@ restart. Directory custody failure refuses diagnostic initialization; subsequent
 control or output failures preserve forwarding. Operators provision the private
 RAM directory before starting a worker.
 
+An active Linux recording directory also enables structured DNS and route
+evidence in both brief and detail modes. The existing diag envelope carries
+`class=evidence truncated=false` followed by one compact JSON object of up to
+768 bytes. Each record has `v=1`, a positive assignment `generation` and the
+event's Unix wall-clock time in `unix_ms`. The snapshot that accepted the
+question or selected the route supplies the generation. Sequence and loss
+counters cover this channel too. Invalid clocks or generations, an over-budget
+record and queue or writer failures contribute to loss. Usual text diagnostics
+retain their 512-character budget and classification.
+
+- A `dns` header carries the normalized question `domain`, numeric `qtype`,
+  `dns_id`, `policy` (direct or cluster), and the matched `rule` (default, exact
+  or suffix). For a suffix match, `suffix_labels` counts its rightmost labels
+  in the question. `source` distinguishes upstream, cluster, cache and local
+  answers. `result` distinguishes answered, empty, truncated, negative
+  (NXDOMAIN), refused, failed (SERVFAIL), other DNS errors and unanswered.
+  A delivered reply includes its numeric `rcode`. Unanswered denotes a failed
+  local response attempt. Malformed input before question admission has no
+  question identity.
+- Each `binding` carries the question's policy, domain, address and `ttl_s`.
+  Join it to the header by boot identity, instance, PID and `dns_id`. All rows
+  of one answer share its event time and generation. A and AAAA queries yield
+  only reachable answer-section addresses, with TTL limited by alias lifetimes.
+  A cached answer uses its remaining wire TTL. Validity runs from `unix_ms`
+  up to, but excluding, `unix_ms + 1000 * ttl_s`. Downstream DNS caches may
+  apply their own lifetimes. Background refresh emits no client answer. The
+  header gives the total `binding_count` and number `omitted` beyond the first
+  32. An unrepresentable answer sets `bindings_unknown`.
+- A `route` carries `transport`, destination `address` and `port`, the decision
+  `ground` and `policy`. A selected cluster records the chosen `front` and,
+  for a two-hop passage, `exit`. The `selected` result records selection before
+  connection establishment. A refused decision carries `refused`. Ordinary
+  selection uses `scope=flow`. The existing rate-limited ICMP refusal path for
+  individual UDP packets uses `scope=packet_sample`. Each `observed_name`
+  comes from the destination name explicitly presented on that TCP connection.
+  ECH outer names and ledger guesses cannot identify the connection's domain.
+  Direct traffic outside Dynet's capture is unobserved.
+- Cluster and node labels of up to 64 UTF-8 bytes containing letters, digits,
+  space, underscore, dot, slash or hyphen can be projected. Otherwise
+  `labels_omitted=true` marks omitted labels. Structured records never copy
+  packet bodies, URLs, client addresses, query strings, keys or outbound
+  connection parameters. Distinct domain bindings on a shared address remain
+  separate time-qualified candidates.
+
 The deployed gateway collector is an independent operator service. It retains
 two native streams and two DNS frontend streams in bounded private RAM files.
 Frontend query serials and original clients belong to dnsmasq; Dynet observes

@@ -3,16 +3,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 const LIMIT: usize = 16;
 
-pub(super) struct Admission {
+pub(super) struct Admission<'a> {
+    pub(super) reporter: crate::inbound::Reporter<'a>,
     direct: AtomicUsize,
     proxy: AtomicUsize,
 }
 
 pub(super) struct Permit<'a>(&'a AtomicUsize);
 
-impl Admission {
-    pub fn new() -> Self {
+impl<'a> Admission<'a> {
+    pub fn new(reporter: crate::inbound::Reporter<'a>) -> Self {
         Self {
+            reporter,
             direct: AtomicUsize::new(0),
             proxy: AtomicUsize::new(0),
         }

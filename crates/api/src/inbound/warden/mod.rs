@@ -27,6 +27,7 @@ const TRIES: usize = 3;
 struct Post<'a> {
     warren: &'a Warren<'a>,
     reply: Reply<'a>,
+    reporter: super::Reporter<'a>,
 }
 
 pub(super) fn seat(address: std::net::SocketAddrV4) -> std::io::Result<(UdpSocket, TcpListener)> {
@@ -42,8 +43,9 @@ pub fn attend(
     warren: &Warren,
     span: Duration,
     sockets: &(UdpSocket, TcpListener),
+    reporter: super::Reporter<'_>,
 ) -> Result<(), Error> {
-    let admission = Admission::new();
+    let admission = Admission::new(reporter);
     std::thread::scope(|scope| {
         scope.spawn(|| udp::attend(warren, span, &sockets.0, &admission));
         tcp::attend(warren, span, &sockets.1, &admission);
@@ -58,7 +60,7 @@ impl Post<'_> {
         let spoken = match result {
             Ok(spoken) => spoken,
             Err(error) => {
-                let _ = self.speak(&Packet::new(&call.asked).failed(&call.query), &call);
+                self.failed(&call);
                 format!("refused: {error}")
             }
         };
@@ -89,6 +91,7 @@ impl Post<'_> {
             return self.refuse(call, "unsupported managed DNS class");
         }
         if query.hints() {
+            call.source.set("local");
             return self
                 .issue(call, &Chain::default(), Some(&asking.barren(query)))
                 .map(|outcome| outcome.text);
@@ -110,6 +113,7 @@ impl Post<'_> {
             refresh,
         } = self.warren.store.recall(&key)
         {
+            call.source.set("cache");
             for item in &mut chain.addresses {
                 item.life = item.life.saturating_sub(aged).max(1);
             }
@@ -136,6 +140,28 @@ impl Post<'_> {
         self.lookup(call, &key, true)
     }
 
+    fn failed(&self, call: &Call) {
+        if self
+            .speak(&Packet::new(&call.asked).failed(&call.query), call)
+            .is_err()
+        {
+            self.record(call, None, "local");
+        }
+    }
+
+    fn record(&self, call: &Call, body: Option<&[u8]>, source: &'static str) {
+        if let Some(sink) = self.reporter {
+            let question = super::evidence::Resolution {
+                query: &call.query,
+                generation: call.generation,
+                rule: call.rule.as_ref(),
+                cluster: call.cluster.as_ref(),
+                source,
+            };
+            super::evidence::dns(sink, question, body);
+        }
+    }
+
     fn speak(&self, body: &[u8], call: &Call) -> Result<(), Error> {
         let held = self.warren.held.read().map_err(|_| poisoned())?;
         if held.paused || held.stamp != call.stamp {
@@ -143,7 +169,10 @@ impl Post<'_> {
         }
         call.circuit
             .allow(|| self.reply.send(body, call.peer))?
-            .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))
+            .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))?;
+        drop(held);
+        self.record(call, Some(body), "local");
+        Ok(())
     }
 
     fn carry(&self, framed: &[u8], wanted: &Name) -> Result<(String, Vec<u8>), Error> {

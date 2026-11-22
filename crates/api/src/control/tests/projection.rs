@@ -45,7 +45,7 @@ impl Rig {
         let bootstrap = fixture.bootstrap(&policy(false));
         let session = Session::open(&bootstrap, &instance, &state, Private::current()).unwrap();
         let mut held = Held::new(session.initial.payload.clone().unwrap(), None).unwrap();
-        held.stamp = session.initial.assignment.receipt.digest.clone();
+        held.bind(&session.initial.assignment.receipt);
         let mut ledger = Ledger::new(86400);
         ledger.record(
             "203.0.113.7".parse().unwrap(),
@@ -138,6 +138,7 @@ fn confirmation() {
     let candidate = rig.candidate(&fixture, 2, &policy(true));
     rig.host.failed.store(true, Ordering::Relaxed);
     assert!(warren.apply(&candidate).is_err());
+    assert_eq!(warren.current().generation, 1);
     assert_eq!(warren.current().loaded.manifest().table().rules().len(), 1);
     assert_eq!(
         rig.session
@@ -154,6 +155,8 @@ fn confirmation() {
     assert!(!rig.halt.load(Ordering::Relaxed));
     rig.host.failed.store(false, Ordering::Relaxed);
     warren.apply(&candidate).unwrap();
+    assert_eq!(held.generation, 1);
+    assert_eq!(warren.current().generation, 2);
     assert_eq!(warren.current().loaded.manifest().table().rules().len(), 2);
     assert_eq!(
         rig.session

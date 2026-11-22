@@ -28,7 +28,7 @@ pub(crate) fn serve(instance: &Instance, stage: &Stage) -> Result<ExitCode, Erro
         std::process::id()
     ));
     host::establish(instance, &ground)?;
-    let carried = watch::carried(instance, stage, (&halt, &told));
+    let carried = watch::carried(instance, stage, (&halt, &told), None);
     match carried {
         Ok(_) => {
             told("stopped; protection is retained until explicit service stop or down");
