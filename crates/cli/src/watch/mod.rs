@@ -65,7 +65,13 @@ pub fn divert(instance: &Instance, stage: &Stage) -> Result<ExitCode, Error> {
     let told = |line: &str| emit.tell(instance.get(), line);
     #[cfg(not(target_os = "linux"))]
     let told = |line: &str| println!("  {line}");
-    let served = carried(instance, stage, (&halt, &told))?;
+    #[cfg(target_os = "linux")]
+    let evidence = |event: inbound::Evidence<'_>| emit.evidence(instance.get(), event);
+    #[cfg(target_os = "linux")]
+    let reporter: inbound::Reporter<'_> = stage.config.record.as_ref().map(|_| &evidence as _);
+    #[cfg(not(target_os = "linux"))]
+    let reporter = None;
+    let served = carried(instance, stage, (&halt, &told), reporter)?;
     Ok(recount(&served))
 }
 
@@ -85,6 +91,7 @@ pub fn carried(
     instance: &Instance,
     stage: &Stage,
     told: (&AtomicBool, &(dyn Fn(&str) + Sync)),
+    reporter: inbound::Reporter<'_>,
 ) -> Result<inbound::Served, Error> {
     let errand = stage.errand;
     let (halt, told) = told;
@@ -110,7 +117,7 @@ pub fn carried(
         });
     let retain = payload.retain;
     let mut active = inbound::Held::new(payload, None)?;
-    active.stamp = session.initial.assignment.receipt.digest.clone();
+    active.bind(&session.initial.assignment.receipt);
     if session.initial.payload.is_none() {
         active.fence.close()?;
         active.paused = true;
@@ -146,7 +153,7 @@ pub fn carried(
         store: &inbound::Store::new(),
         told,
     };
-    inbound::divert(&warren, ground)
+    inbound::observe(&warren, ground, reporter)
 }
 
 pub fn recount(served: &inbound::Served) -> ExitCode {

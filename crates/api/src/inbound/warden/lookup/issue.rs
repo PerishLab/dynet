@@ -49,6 +49,9 @@ impl Post<'_> {
                 call.circuit
                     .allow(|| self.reply.send(&denied, call.peer))?
                     .map_err(|error| Error::new(format!("cannot send DNS refusal: {error}")))?;
+                drop(held);
+                drop(ledger);
+                self.record(call, Some(&denied), "local");
             }
             return Ok(Issuance {
                 accepted: false,
@@ -70,6 +73,9 @@ impl Post<'_> {
             call.circuit
                 .allow(|| self.reply.send(body, call.peer))?
                 .map_err(|error| Error::new(format!("cannot answer the caller: {error}")))?;
+            drop(held);
+            drop(ledger);
+            self.record(call, Some(body), call.source.get());
         }
         Ok(Issuance {
             accepted: true,

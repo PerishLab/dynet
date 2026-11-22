@@ -194,3 +194,33 @@ fn escaped() {
     assert!(body.contains("first\\nforged\\rline"));
     assert_eq!(body.lines().count(), 2);
 }
+
+#[test]
+fn evidence() {
+    let seat = seat();
+    let writer = sink();
+    let bytes = Arc::clone(&writer.bytes);
+    let emit = Emit::buffered(seat.path().to_path_buf(), "dynetfixture", writer).unwrap();
+    use dynet_api::inbound::Evidence;
+    let sample = serde_json::json!({"generation":12,"v":1,"event":"route","unix_ms":1700000000123u64,"address":"192.0.2.1","port":443,"transport":"tcp","result":"selected","scope":"flow","ground":"fallback","policy":"direct"}).to_string();
+    emit.evidence("dynetfixture", Evidence::Line(&sample));
+    let exact = format!("{{\"sample\":\"{}\"}}", "a".repeat(755));
+    assert_eq!(exact.len(), 768);
+    emit.evidence("dynetfixture", Evidence::Line(&exact));
+    emit.evidence("dynetfixture", Evidence::Line(&format!("{exact} ")));
+    emit.evidence("dynetfixture", Evidence::Line("bad\nline"));
+    emit.evidence("dynetfixture", Evidence::Lost);
+    emit.tell("dynetfixture", "refused: sentinel");
+    wait(|| text(&bytes).contains("sentinel"));
+    let output = text(&bytes);
+    let records: Vec<_> = output
+        .lines()
+        .filter(|line| line.contains("class=evidence"))
+        .collect();
+    assert_eq!(records.len(), 2);
+    assert!(records[0].contains("detail=false class=evidence truncated=false"));
+    assert!(records[0].ends_with(&sample));
+    assert!(records[1].ends_with(&exact));
+    assert!(output.contains("lost=3"));
+    println!("{}", records[0]);
+}

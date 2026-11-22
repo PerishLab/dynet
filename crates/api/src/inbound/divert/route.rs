@@ -11,13 +11,14 @@ impl Divert<'_> {
         sight: &Sight,
     ) -> Option<(Chosen, String)> {
         let (decision, selection) = self.warren.decide(sight)?;
+        let generation = selection.generation();
         if decision.ground() == Ground::Named {
             self.tally(|served| served.named += 1);
         }
         let aimed = decision
             .aim()
             .map_or_else(|| target.ip().to_string(), |aim| aim.get().to_string());
-        match decision.course() {
+        let chosen = match decision.course() {
             Course::Through(cluster) => {
                 if let Some(aim) = decision.aim() {
                     (self.told())(&format!("{target} aim={}", aim.get()));
@@ -29,20 +30,32 @@ impl Divert<'_> {
                         cluster.get()
                     ));
                 }
-                Some((chosen?, aimed))
+                chosen
             }
             Course::Direct if sight.bearing == Bearing::Stream => {
                 (self.told())(&format!(
                     "{target} leaves directly on {:?}",
                     decision.ground()
                 ));
-                Some((self.warren.direct(selection)?, aimed))
+                self.warren.direct(selection)
             }
             Course::Direct | Course::Refused(..) => {
                 self.refused(target, &decision, sight.bearing);
                 None
             }
-        }
+        };
+        crate::inbound::evidence::route(
+            self.reporter,
+            crate::inbound::evidence::Selection {
+                target,
+                sight,
+                decision: &decision,
+                chosen: chosen.as_ref(),
+                scope: "flow",
+                generation,
+            },
+        );
+        chosen.map(|chosen| (chosen, aimed))
     }
 
     pub(super) fn refused(&self, target: SocketAddrV4, decision: &Decision, bearing: Bearing) {

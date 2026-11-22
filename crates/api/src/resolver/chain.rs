@@ -121,3 +121,33 @@ fn next(records: &[Record], name: &Domain) -> Result<Option<(Domain, u32)>, Erro
     }
     Ok(edge)
 }
+
+pub(crate) fn bindings(body: &[u8], query: &Query) -> Result<Vec<(std::net::IpAddr, u32)>, Error> {
+    let rows = records(body, query)?;
+    let mut name = Domain::new(&query.name)?;
+    let mut life = u32::MAX;
+    for _ in 0..=16 {
+        let edge = next(&rows, &name)?;
+        let mut found = Vec::new();
+        for row in rows
+            .iter()
+            .filter(|row| row.owner == name && row.kind == query.kind)
+        {
+            let address = match row.data {
+                Data::Address(ip) => std::net::IpAddr::V4(ip),
+                Data::Quad(ip) => std::net::IpAddr::V6(ip),
+                _ => continue,
+            };
+            found.push((address, life.min(row.life)));
+        }
+        let Some((target, ttl)) = edge else {
+            return Ok(found);
+        };
+        if !found.is_empty() {
+            return Err(invalid());
+        }
+        name = target;
+        life = life.min(ttl);
+    }
+    Err(invalid())
+}

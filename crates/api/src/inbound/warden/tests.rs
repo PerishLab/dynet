@@ -28,7 +28,7 @@ fn isolation() {
     let held = policy("proxy.invalid");
     let proxy = ask(&held, "node.proxy.invalid");
     let direct = ask(&held, "domestic.invalid");
-    let admission = Admission::new();
+    let admission = Admission::new(None);
     let permits: Vec<_> = (0..16).map(|_| admission.enter(&proxy).unwrap()).collect();
     assert!(admission.enter(&proxy).is_none());
     let direct = admission.enter(&direct).unwrap();
@@ -41,7 +41,7 @@ fn isolation() {
 fn direct() {
     let held = policy("proxy.invalid");
     let call = ask(&held, "domestic.invalid");
-    let admission = Admission::new();
+    let admission = Admission::new(None);
     let permits: Vec<_> = (0..16).map(|_| admission.enter(&call).unwrap()).collect();
     assert!(admission.enter(&call).is_none());
     drop(permits);

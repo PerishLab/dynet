@@ -83,6 +83,28 @@ impl Emit {
         Ok(Self { queue: Some(queue) })
     }
 
+    pub(crate) fn evidence(&self, label: &str, event: dynet_api::inbound::Evidence<'_>) {
+        let Some(queue) = &self.queue else {
+            return;
+        };
+        let sequence = increment(&queue.sequence);
+        let dynet_api::inbound::Evidence::Line(line) = event else {
+            increment(&queue.lost);
+            return;
+        };
+        if line.len() > 768 || line.bytes().any(|byte| byte.is_ascii_control()) {
+            increment(&queue.lost);
+            return;
+        }
+        let now = queue.clock.now();
+        let detail = now < queue.until.load(Ordering::Relaxed);
+        let message = format!(
+            "diag instance={label} pid={} seq={sequence} uptime={now} detail={detail} class=evidence truncated=false {line}\n",
+            std::process::id()
+        );
+        queue.offer(message);
+    }
+
     pub(crate) fn tell(&self, label: &str, line: &str) {
         let Some(queue) = &self.queue else {
             println!("  {line}");
@@ -108,10 +130,16 @@ impl Emit {
             truncated,
             clean
         );
-        match queue.sender.try_send(message) {
+        queue.offer(message);
+    }
+}
+
+impl Queue {
+    fn offer(&self, message: String) {
+        match self.sender.try_send(message) {
             Ok(()) => {}
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
-                increment(&queue.lost);
+                increment(&self.lost);
             }
         }
     }

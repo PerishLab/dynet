@@ -36,10 +36,11 @@ impl Table {
     }
 
     pub fn claimed(&self, domain: &Domain) -> Option<&Name> {
-        self.rules
-            .iter()
-            .find(|rule| rule.named(domain))
-            .map(Rule::cluster)
+        self.matching(domain).map(Rule::cluster)
+    }
+
+    pub fn matching(&self, domain: &Domain) -> Option<&Rule> {
+        self.rules.iter().find(|rule| rule.named(domain))
     }
 
     pub fn held(&self, address: IpAddr) -> Option<&Name> {

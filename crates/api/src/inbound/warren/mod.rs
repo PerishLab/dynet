@@ -1,3 +1,4 @@
+pub(super) mod evidence;
 use super::store::Store;
 use super::warden;
 use crate::control::{Control, Payload, Projection};
@@ -41,6 +42,7 @@ pub struct Chosen {
     pub charge: Option<Charge>,
     pub told: String,
     pub passage: Passage,
+    pub exit: Option<Label>,
 }
 
 pub struct Selection {
@@ -55,6 +57,7 @@ pub struct Held {
     pub retain: u64,
     pub paused: bool,
     pub stamp: String,
+    pub generation: u64,
     pub fence: Arc<Fence>,
 }
 
@@ -74,7 +77,18 @@ pub struct Warren<'a> {
     pub told: &'a (dyn Fn(&str) + Sync),
 }
 
+impl Selection {
+    pub(super) fn generation(&self) -> u64 {
+        self.held.generation
+    }
+}
+
 impl Held {
+    pub fn bind(&mut self, receipt: &secrets::Receipt) {
+        self.stamp.clone_from(&receipt.digest);
+        self.generation = receipt.generation;
+    }
+
     pub fn new(payload: Payload, earlier: Option<&Self>) -> Result<Self, Error> {
         let Payload {
             loaded,
@@ -107,6 +121,7 @@ impl Held {
             retain,
             paused: false,
             stamp: String::new(),
+            generation: 0,
             fence,
         })
     }
@@ -166,12 +181,19 @@ impl Warren<'_> {
     }
 
     pub fn inspect(&self, sight: &Sight) -> Option<Decision> {
+        self.inspected(sight).map(|(decision, _)| decision)
+    }
+
+    pub(super) fn inspected(&self, sight: &Sight) -> Option<(Decision, u64)> {
         let ledger = self.ledger.lock().ok()?;
         let held = self.current();
         if held.paused || held.fence.closed() {
             return None;
         }
-        Some(decide(held.loaded.manifest(), &ledger, sight))
+        Some((
+            decide(held.loaded.manifest(), &ledger, sight),
+            held.generation,
+        ))
     }
 
     fn selection(&self) -> Option<Selection> {
@@ -218,12 +240,14 @@ impl Warren<'_> {
             return Some(Chosen {
                 charge,
                 told: label.get().to_string(),
+                exit: None,
                 passage: Passage::Plain(endpoint).gated(circuit),
             });
         };
         Some(Chosen {
             charge,
             told: format!("{} through {}", exit.get(), label.get()),
+            exit: Some(exit.clone()),
             passage: Passage::Veiled(endpoint, roster.exit(exit).ok()?).gated(circuit),
         })
     }
@@ -236,6 +260,7 @@ impl Warren<'_> {
         Some(Chosen {
             charge: None,
             told: "direct".to_string(),
+            exit: None,
             passage: Passage::Direct(self.instance.mark()).gated(circuit),
         })
     }
@@ -251,8 +276,13 @@ pub fn observed(charge: Option<&Charge>, verdict: Verdict) {
     pool.observed(&charge.label, charge.bearing, verdict, Instant::now());
 }
 
-pub fn stand(warren: &Warren, span: Duration, socket: &(UdpSocket, TcpListener)) {
-    let Err(error) = warden::attend(warren, span, socket) else {
+pub fn stand(
+    warren: &Warren,
+    span: Duration,
+    socket: &(UdpSocket, TcpListener),
+    reporter: super::Reporter<'_>,
+) {
+    let Err(error) = warden::attend(warren, span, socket, reporter) else {
         return;
     };
     (warren.told)(&format!("the resolver refused to start: {error}"));

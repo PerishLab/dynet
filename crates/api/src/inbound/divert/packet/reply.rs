@@ -124,18 +124,34 @@ impl Divert<'_> {
         if *target.ip() == self.span.spare() || *target.ip() == self.span.seat() {
             return false;
         }
-        let Some(decision) = self.unborne(&quote.held) else {
+        let Some((decision, generation)) = self.unborne(&quote.held) else {
             return false;
         };
         self.refused(target, &decision, Bearing::Datagram);
         self.tally(|served| served.refused += 1);
         if allowance.take(Instant::now()) {
+            let sight = Sight {
+                told: None,
+                address: IpAddr::V4(*target.ip()),
+                bearing: Bearing::Datagram,
+            };
+            crate::inbound::evidence::route(
+                self.reporter,
+                crate::inbound::evidence::Selection {
+                    target,
+                    sight: &sight,
+                    decision: &decision,
+                    chosen: None,
+                    scope: "packet_sample",
+                    generation,
+                },
+            );
             let _ = device.send(quote.answer(&mut [0; ROOM]));
         }
         true
     }
 
-    fn unborne(&self, held: &Held) -> Option<dynet_core::Decision> {
+    fn unborne(&self, held: &Held) -> Option<(dynet_core::Decision, u64)> {
         if self.book.lock().ok()?.contains(held) {
             return None;
         }
@@ -144,12 +160,12 @@ impl Divert<'_> {
             address: IpAddr::V4(*held.target.ip()),
             bearing: Bearing::Datagram,
         };
-        let decision = self.warren.inspect(&sight)?;
+        let (decision, generation) = self.warren.inspected(&sight)?;
         let unavailable = matches!(
             decision.course(),
             Course::Direct | Course::Refused(_, Refusal::Unborne)
         );
-        unavailable.then_some(decision)
+        unavailable.then_some((decision, generation))
     }
 }
 

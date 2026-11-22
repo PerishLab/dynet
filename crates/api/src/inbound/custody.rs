@@ -67,7 +67,7 @@ impl Warren<'_> {
                 held
             }
         };
-        next.stamp = candidate.assignment.receipt.digest.clone();
+        next.bind(&candidate.assignment.receipt);
         let mut issued = ledger.clone();
         issued.retention(next.retain);
         if !next.paused {
