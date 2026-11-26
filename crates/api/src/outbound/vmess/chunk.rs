@@ -42,7 +42,7 @@ impl Chunk {
         stream
             .write_all(&length.to_be_bytes())
             .and_then(|()| stream.write_all(&sealed))
-            .map_err(|error| Error::new(format!("cannot write a chunk: {error}")))
+            .map_err(|error| Error::io("cannot write a chunk", error))
     }
 
     pub fn receive(&mut self, stream: &mut impl Read) -> Result<Option<Vec<u8>>, Error> {
@@ -50,7 +50,7 @@ impl Chunk {
         match stream.read_exact(&mut header) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(error) => return Err(Error::new(format!("cannot read a chunk: {error}"))),
+            Err(error) => return Err(Error::io("cannot read a chunk", error)),
         }
         let length = usize::from(u16::from_be_bytes(header));
         if length == 0 {
@@ -59,7 +59,7 @@ impl Chunk {
         let mut sealed = vec![0u8; length];
         stream
             .read_exact(&mut sealed)
-            .map_err(|error| Error::new(format!("cannot read a chunk body: {error}")))?;
+            .map_err(|error| Error::io("cannot read a chunk body", error))?;
         let nonce = self.nonce();
         self.cipher
             .decrypt(

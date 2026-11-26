@@ -1,9 +1,12 @@
-use crate::outbound::{Circuit, Listener, Passage, Speaker};
+mod trace;
+
+use crate::outbound::{Circuit, Failure, Listener, Passage, Speaker};
 use dynet_core::{Fault, Verdict};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel, sync_channel};
 use std::thread;
 use std::time::Duration;
+use trace::Trace;
 
 pub const DEPTH: usize = 4;
 
@@ -12,7 +15,12 @@ struct Errand {
     target: String,
     port: u16,
     bearing: bool,
-    told: Sender<Verdict>,
+    told: Sender<Outcome>,
+}
+
+struct Outcome {
+    verdict: Verdict,
+    failure: Option<Failure>,
 }
 
 pub enum Taken {
@@ -24,7 +32,8 @@ pub enum Taken {
 pub struct Link {
     upward: Option<SyncSender<Vec<u8>>>,
     downward: Receiver<Vec<u8>>,
-    told: Receiver<Verdict>,
+    told: Receiver<Outcome>,
+    trace: Option<Trace>,
     circuit: Option<Arc<Circuit>>,
 }
 
@@ -46,6 +55,7 @@ impl Link {
         let (incoming, downward) = sync_channel(DEPTH);
         let (spoken, told) = channel();
         let circuit = passage.circuit();
+        let trace = (!bearing && passage.chained()).then(Trace::new);
         let errand = Errand {
             passage,
             target,
@@ -59,6 +69,7 @@ impl Link {
             downward,
             told,
             circuit,
+            trace,
         }
     }
 
@@ -101,8 +112,26 @@ impl Link {
         self.upward.take()
     }
 
+    pub(crate) fn request(&self) -> Option<&str> {
+        self.trace.as_ref().map(|trace| trace.request.as_str())
+    }
+
     pub fn verdict(&self) -> Option<Verdict> {
-        self.told.try_recv().ok()
+        self.told.try_recv().ok().map(|outcome| outcome.verdict)
+    }
+
+    pub(crate) fn report(&self, tell: &dyn Fn(&str)) -> Option<Verdict> {
+        let result = self.told.try_recv().ok();
+        if let Some(trace) = &self.trace {
+            tell(
+                &trace.line(
+                    result
+                        .as_ref()
+                        .map(|outcome| (outcome.verdict, outcome.failure.as_ref())),
+                ),
+            );
+        }
+        result.map(|outcome| outcome.verdict)
     }
 }
 
@@ -116,24 +145,33 @@ impl Drop for Link {
 
 fn carry(errand: Errand, outgoing: Receiver<Vec<u8>>, incoming: SyncSender<Vec<u8>>) {
     let (egress, ingress) = match reach(&errand) {
-        Err(fault) => {
-            let _ = errand.told.send(Verdict::Faulted(fault));
+        Err(outcome) => {
+            let _ = errand.told.send(outcome);
             return;
         }
         Ok(halves) => halves,
     };
     let writer = thread::spawn(move || push(egress, outgoing));
-    let verdict = pull(ingress, &incoming);
-    let _ = errand.told.send(verdict);
+    let _ = errand.told.send(pull(ingress, &incoming));
     drop(incoming);
     let _ = writer.join();
 }
 
-fn reach(errand: &Errand) -> Result<(Speaker, Listener), Fault> {
-    match errand.bearing {
-        true => errand.passage.bear(&errand.target, errand.port),
-        false => errand.passage.open(&errand.target, errand.port),
+fn reach(errand: &Errand) -> Result<(Speaker, Listener), Outcome> {
+    let (target, port) = (&errand.target, errand.port);
+    if errand.bearing {
+        return errand.passage.bear(target, port).map_err(|fault| Outcome {
+            verdict: Verdict::Faulted(fault),
+            failure: None,
+        });
     }
+    errand
+        .passage
+        .observed(target, port)
+        .map_err(|failure| Outcome {
+            verdict: Verdict::Faulted(failure.fault),
+            failure: Some(failure),
+        })
 }
 
 fn push(mut egress: Speaker, outgoing: Receiver<Vec<u8>>) {
@@ -145,23 +183,42 @@ fn push(mut egress: Speaker, outgoing: Receiver<Vec<u8>>) {
     let _ = egress.done();
 }
 
-fn pull(mut ingress: Listener, incoming: &SyncSender<Vec<u8>>) -> Verdict {
+fn pull(mut ingress: Listener, incoming: &SyncSender<Vec<u8>>) -> Outcome {
     let mut answered = false;
     let mut fault = Fault::Silent;
+    let mut kind = None;
     loop {
         let taken = ingress.receive();
-        if taken.is_err() {
-            fault = ingress.fault().unwrap_or(Fault::Severed);
-            break;
+        match &taken {
+            Err(error) => {
+                fault = ingress.fault().unwrap_or(Fault::Severed);
+                kind = error.kind();
+                break;
+            }
+            Ok(None) => {
+                kind = Some(std::io::ErrorKind::UnexpectedEof);
+                break;
+            }
+            Ok(Some(_)) => answered = true,
         }
-        let Ok(Some(part)) = taken else { break };
-        answered = true;
-        if incoming.send(part).is_err() {
+        if let Ok(Some(part)) = taken
+            && incoming.send(part).is_err()
+        {
             break;
         }
     }
     match answered {
-        true => Verdict::Answered,
-        false => Verdict::Faulted(fault),
+        true => Outcome {
+            verdict: Verdict::Answered,
+            failure: None,
+        },
+        false => Outcome {
+            verdict: Verdict::Faulted(fault),
+            failure: Some(Failure {
+                stage: ingress.stage(),
+                fault,
+                kind,
+            }),
+        },
     }
 }

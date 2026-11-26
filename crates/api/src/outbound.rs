@@ -11,6 +11,7 @@ mod vmess;
 pub use bond::{marked, reach};
 pub use book::Book;
 pub use parts::{Circuit, Egress, Exit, Fence, Front, Ingress, Listener, Passage, Speaker};
+pub(crate) use parts::{Failure, Stage};
 pub use shadow::{Cloak, Shroud, veil};
 pub use spread::{PROBE, Roster, Run, Trial};
 pub use vless::Reality;

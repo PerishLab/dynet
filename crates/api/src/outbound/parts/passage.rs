@@ -1,4 +1,4 @@
-use super::{Circuit, Egress, Exit, Front, Ingress, Listener, Speaker, uot};
+use super::{Circuit, Egress, Exit, Failure, Front, Ingress, Listener, Speaker, Stage, uot};
 use crate::outbound::{veil, vmess::Tunnel};
 use dynet_core::Fault;
 use std::sync::Arc;
@@ -14,7 +14,19 @@ pub enum Passage {
 
 impl Passage {
     pub fn open(&self, host: &str, port: u16) -> Result<(Speaker, Listener), Fault> {
+        self.observed(host, port).map_err(|failure| failure.fault)
+    }
+
+    pub(crate) fn observed(&self, host: &str, port: u16) -> Result<(Speaker, Listener), Failure> {
         self.going(host, port, None)
+    }
+
+    pub(crate) fn chained(&self) -> bool {
+        match self {
+            Self::Guarded(passage, _) => passage.chained(),
+            Self::Veiled(..) => true,
+            _ => false,
+        }
     }
 
     fn going(
@@ -22,7 +34,7 @@ impl Passage {
         host: &str,
         port: u16,
         gate: Option<&Circuit>,
-    ) -> Result<(Speaker, Listener), Fault> {
+    ) -> Result<(Speaker, Listener), Failure> {
         match self {
             Self::Guarded(passage, circuit) => passage.going(host, port, Some(circuit)),
             Self::Plain(front) => {
@@ -89,15 +101,21 @@ fn direct(
     port: u16,
     mark: u32,
     gate: Option<&Circuit>,
-) -> Result<(Speaker, Listener), Fault> {
-    let seat = crate::outbound::bond::place(host, port).map_err(|_| Fault::Reach)?;
-    let stream = crate::outbound::bond::reach(seat, mark, PATIENCE).map_err(|_| Fault::Reach)?;
+) -> Result<(Speaker, Listener), Failure> {
+    let failed = |error| Stage::Connect.failed(Fault::Reach, error);
+    let seat = crate::outbound::bond::place(host, port).map_err(failed)?;
+    let stream = crate::outbound::bond::reach(seat, mark, PATIENCE).map_err(failed)?;
     let stream = if let Some(gate) = gate {
-        gate.attach(stream).map_err(|_| Fault::Reach)?
+        gate.attach(stream).map_err(failed)?
     } else {
         stream
     };
-    let again = stream.try_clone().map_err(|_| Fault::Reach)?;
+    let again = stream.try_clone().map_err(|error| {
+        failed(dynet_core::Error::io(
+            "cannot halve the direct session",
+            error,
+        ))
+    })?;
     Ok((
         Speaker::Plain(Egress::Raw(stream)),
         Listener::Plain(Ingress::Raw(again)),
@@ -109,12 +127,15 @@ fn veiled(
     exit: &Exit,
     seat: (&str, u16),
     gate: Option<&Circuit>,
-) -> Result<(Speaker, Listener), Fault> {
+) -> Result<(Speaker, Listener), Failure> {
     let (mut egress, ingress) = front.boarding(&exit.host, exit.port, gate)?;
-    let (mut cloak, shroud) = veil(exit.secret).map_err(|_| Fault::Handshake)?;
-    cloak
-        .greet(&mut egress, seat, &[])
-        .map_err(|_| Fault::Handshake)?;
+    let stage = match ingress.opening() {
+        Stage::Handshake => Stage::Request,
+        stage => stage,
+    };
+    let failed = |error| stage.failed(Fault::Handshake, error);
+    let (mut cloak, shroud) = veil(exit.secret).map_err(failed)?;
+    cloak.greet(&mut egress, seat, &[]).map_err(failed)?;
     Ok((
         Speaker::Veiled(egress, Box::new(cloak)),
         Listener::Veiled(ingress, Box::new(shroud)),
@@ -131,7 +152,9 @@ fn relayed(
         return Err(Fault::Handshake);
     }
     let request = uot::request(seat).map_err(|_| Fault::Handshake)?;
-    let (mut egress, ingress) = front.boarding(&exit.host, exit.port, gate)?;
+    let (mut egress, ingress) = front
+        .boarding(&exit.host, exit.port, gate)
+        .map_err(|failure| failure.fault)?;
     let (mut cloak, shroud) = veil(exit.secret).map_err(|_| Fault::Handshake)?;
     cloak
         .greet(&mut egress, (uot::HOST, 0), &request)

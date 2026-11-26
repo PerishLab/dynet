@@ -85,7 +85,7 @@ impl Tunnel {
         stream
             .set_read_timeout(Some(BRIEF))
             .and_then(|()| stream.set_write_timeout(Some(PATIENT)))
-            .map_err(|error| Error::new(format!("cannot bound the node session: {error}")))?;
+            .map_err(|error| Error::io("cannot bound the node session", error))?;
         Self::dress(stream)
     }
 
@@ -123,7 +123,7 @@ impl Tunnel {
         seed.copy_from_slice(&secret[16..32]);
         let listening = stream
             .try_clone()
-            .map_err(|error| Error::new(format!("cannot halve the node session: {error}")))?;
+            .map_err(|error| Error::io("cannot halve the node session", error))?;
         Ok(Self {
             egress: Egress::new(stream, Chunk::new(&key, seed)),
             ingress: Ingress::new(listening, key, seed, secret[32]),
@@ -202,7 +202,7 @@ fn conceal(
     )
 }
 
-fn seal(key: &[u8; 16], seed: &[u8; 32], auth: &[u8; 16], body: &[u8]) -> Result<Vec<u8>, Error> {
+fn seal(key: &[u8; 16], seed: &[u8; 32], auth: &[u8], body: &[u8]) -> Result<Vec<u8>, Error> {
     let cipher = Aes128Gcm::new(Key::<Aes128Gcm>::from_slice(key));
     cipher
         .encrypt(
@@ -214,3 +214,6 @@ fn seal(key: &[u8; 16], seed: &[u8; 32], auth: &[u8; 16], body: &[u8]) -> Result
         )
         .map_err(|_| Error::new("cannot seal the request header"))
 }
+
+#[cfg(test)]
+mod tests;

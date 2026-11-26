@@ -73,8 +73,8 @@ impl Divert<'_> {
             self.tally(|served| served.refused += 1);
             return;
         };
-        self.opened(held.target, &chosen);
         let link = Link::open(chosen.passage, aimed, held.target.port());
+        self.opened(held.target, &chosen.told, link.request());
         self.carry(stream, link, chosen.charge.as_ref());
     }
 
@@ -87,17 +87,23 @@ impl Divert<'_> {
         self.route(target, &sight).map(|(chosen, _)| chosen)
     }
 
-    pub(super) fn opened(&self, target: SocketAddrV4, chosen: &Chosen) {
-        (self.told())(&format!("{target} through {}", chosen.told));
+    pub(super) fn opened(&self, target: SocketAddrV4, path: &str, request: Option<&str>) {
+        let line = match request {
+            Some(request) => format!("{target} through {path} request={request}"),
+            None => format!("{target} through {path}"),
+        };
+        (self.told())(&line);
         self.tally(|served| served.accepted += 1);
     }
 
     pub(super) fn judge(&self, link: &Link, charge: Option<&Charge>) {
-        let Some(verdict) = link.verdict() else {
+        let Some(verdict) = link.report(self.told()) else {
             return;
         };
         warren::observed(charge, verdict);
-        (self.told())(&format!("verdict {verdict:?}"));
+        if link.request().is_none() {
+            (self.told())(&format!("verdict {verdict:?}"));
+        }
         match matches!(verdict, Verdict::Faulted(_)) {
             true => self.tally(|served| served.faulted += 1),
             false => self.tally(|served| served.answered += 1),
@@ -155,7 +161,7 @@ impl Divert<'_> {
             self.tally(|served| served.refused += 1);
             return None;
         };
-        self.opened(kept.target, &chosen);
+        self.opened(kept.target, &chosen.told, None);
         let charge = chosen.charge?;
         let mut link = Link::bear(
             chosen.passage,

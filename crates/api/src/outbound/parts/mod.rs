@@ -42,6 +42,13 @@ impl Egress {
 }
 
 impl Ingress {
+    fn opening(&self) -> Stage {
+        match self {
+            Self::Vmess(ingress) if !ingress.accepted() => Stage::Handshake,
+            _ => Stage::Open,
+        }
+    }
+
     pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
         match self {
             Self::Vmess(ingress) => ingress.receive(),
@@ -121,6 +128,14 @@ impl Speaker {
 }
 
 impl Listener {
+    pub(crate) fn stage(&self) -> Stage {
+        match self {
+            Self::Veiled(_, shroud) if shroud.accepted() => Stage::Relay,
+            Self::Veiled(ingress, _) => ingress.opening(),
+            _ => Stage::Relay,
+        }
+    }
+
     pub fn receive(&mut self) -> Result<Option<Vec<u8>>, Error> {
         match self {
             Self::Plain(ingress) => ingress.receive(),
@@ -141,7 +156,9 @@ impl Listener {
 mod fence;
 mod front;
 mod passage;
+mod stage;
 mod uot;
 pub use fence::{Circuit, Fence};
 pub use front::{Exit, Front};
 pub use passage::Passage;
+pub(crate) use stage::{Failure, Stage};

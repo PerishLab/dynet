@@ -43,7 +43,7 @@ impl Wire {
             }
             Err(error) => {
                 self.fault = Some(ending(error.kind()));
-                Err(Error::new(format!("the node session broke: {error}")))
+                Err(Error::io("the node session broke", error))
             }
         }
     }
@@ -150,7 +150,7 @@ impl Writer {
     pub fn raw(&mut self, body: &[u8]) -> Result<(), Error> {
         self.stream
             .write_all(body)
-            .map_err(|error| Error::new(format!("cannot write to the node: {error}")))
+            .map_err(|error| Error::io("cannot write to the node", error))
     }
 
     pub fn close(&mut self) -> Result<(), Error> {
@@ -161,7 +161,7 @@ impl Writer {
     pub fn shut(&self) -> Result<(), Error> {
         self.stream
             .shutdown(Shutdown::Write)
-            .map_err(|error| Error::new(format!("cannot close the node session: {error}")))
+            .map_err(|error| Error::io("cannot close the node session", error))
     }
 }
 
