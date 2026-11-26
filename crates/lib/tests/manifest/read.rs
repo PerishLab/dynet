@@ -213,3 +213,37 @@ fn push(value: &mut Value, cluster: Value) {
         all.push(cluster);
     }
 }
+
+#[test]
+fn generation() {
+    let mut absent = base();
+    absent.as_object_mut().unwrap().remove("generation");
+    assert_eq!(read(&absent).expect("absent").generation(), None);
+
+    let mut null = base();
+    null["generation"] = Value::Null;
+    assert_eq!(read(&null).expect("null").generation(), None);
+
+    let mut named = base();
+    named["generation"] = json!("pixel-full");
+    assert_eq!(
+        read(&named).expect("named").generation(),
+        Some("pixel-full")
+    );
+
+    for (bad, needle) in [
+        (json!(25), "not a number"),
+        (json!(true), "not a boolean"),
+        (json!(["probe"]), "not an array"),
+        (json!({"label": "probe"}), "not an object"),
+        (json!(""), "non-empty string label"),
+        (json!("   "), "non-empty string label"),
+    ] {
+        let mut value = base();
+        value["generation"] = bad;
+        let error = read(&value).expect_err(needle).to_string();
+        assert!(error.contains("manifest.generation"), "{error}");
+        assert!(error.contains("--generation"), "{error}");
+        assert!(error.contains(needle), "{needle} => {error}");
+    }
+}

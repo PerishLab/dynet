@@ -68,6 +68,7 @@ The authenticated decrypted payload has one schema:
   "retain": 86400,
   "manifest": {
     "version": 1,
+    "generation": "probe",
     "nodes": [],
     "clusters": [],
     "rules": [],
@@ -84,13 +85,50 @@ issues, never shortens existing issues. Payloads and envelopes inherit the SDK's
 1 MiB and 4 MiB bounds. Errors from decrypted parsing are masked; node material
 is absent from `Entry`, `Declared` and enclosing debug output.
 
+### Manifest label versus envelope generation
+
+Two distinct fields share the name `generation` at different layers:
+
+- **Payload `manifest.generation`** (optional non-empty string label, such as
+  `"probe"` or `"pixel-full"`): an authoring label inside the decrypted manifest
+  JSON (`version: 1`). It carries no anti-replay meaning and must never be set
+  to an integer. A non-string or blank `manifest.generation` fails manifest
+  parsing immediately with a diagnostic naming `secrets publish/seal --generation`.
+- **Control-plane envelope `--generation` / `receipt.generation`** (monotonic
+  positive integer): the signed envelope version supplied to
+  `secrets publish --generation <N>` or `secrets seal --generation <N>` and
+  enforced by the Secrets SDK and Dynet's durable generation floor.
+
+**Schema naming decision:** manifest `version: 1` retains the field name
+`manifest.generation` rather than renaming it to `manifest.label` or
+`manifest.variant`, preserving wire compatibility with deployed OpenWrt and host
+envelopes. Authoring mismatches are prevented through strict string validation
+with actionable diagnostics and local pre-seal validation (`dynet check`). A
+field rename is deferred unless a breaking manifest `version: 2` schema is
+introduced for independent functional requirements.
+
+Validate the plaintext business configuration or standalone manifest locally
+before sealing or publishing:
+
+```sh
+dynet check --input /private/business-config.json
+dynet check --input - < /private/business-config.json
+dynet check --kind manifest --input /private/manifest.json
+```
+
+`dynet check` enforces the 1 MiB payload bound, business configuration schema,
+manifest validation (including string-only `manifest.generation`), and front/exit
+node checks with unmasked diagnostics while printing no node credentials.
+Runtime decryption (`Payload::read`) retains masked errors.
+
 Publish from the trusted operator's private declaration using the released
 Secrets CLI. Its declaration binds target, public recipient, local signer and
 remote connection; the recipient is not learned from API inventory.
 
 ```sh
-secrets publish --declaration /private/publication.json --generation 2 --input -
-secrets seal --declaration /private/publication.json --generation 2 --input - --output /private/routing.envelope
+dynet check --input /private/business-config.json
+secrets publish --declaration /private/publication.json --generation 2 --input - < /private/business-config.json
+secrets seal --declaration /private/publication.json --generation 2 --input - --output /private/routing.envelope < /private/business-config.json
 ```
 
 The first command assigns through the API; the second produces a file source.

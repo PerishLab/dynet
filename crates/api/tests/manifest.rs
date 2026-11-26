@@ -118,3 +118,52 @@ fn authentication() {
     let unknown = Label::new("unknown/front").expect("unknown label");
     assert!(Roster::new(loaded.entries(), 0).board(&unknown).is_err());
 }
+
+#[test]
+fn payload() {
+    let mut manifest = base();
+    manifest["generation"] = json!("probe");
+    let valid = json!({
+        "version": 1,
+        "upstream": "1.1.1.1",
+        "retain": 86400,
+        "manifest": manifest
+    });
+    let checked =
+        dynet_api::control::Payload::check(valid.to_string().as_bytes()).expect("valid payload");
+    assert_eq!(checked.loaded.manifest().generation(), Some("probe"));
+    assert_eq!(checked.retain, 86400);
+
+    let mut invalid = valid.clone();
+    invalid["manifest"]["generation"] = json!(25);
+    let bytes = invalid.to_string();
+    let error = dynet_api::control::Payload::check(bytes.as_bytes())
+        .err()
+        .expect("integer manifest.generation refused")
+        .to_string();
+    assert!(error.contains("manifest.generation"), "{error}");
+    assert!(error.contains("not a number"), "{error}");
+    assert!(error.contains("--generation"), "{error}");
+
+    let masked = dynet_api::control::Payload::read(bytes.as_bytes())
+        .err()
+        .expect("runtime read refused")
+        .to_string();
+    assert_eq!(masked, "encrypted configuration refused");
+
+    let mut zero = valid.clone();
+    zero["retain"] = json!(0);
+    let error = dynet_api::control::Payload::check(zero.to_string().as_bytes())
+        .err()
+        .expect("zero retain refused")
+        .to_string();
+    assert!(error.contains("retain"), "{error}");
+
+    let mut bad = valid;
+    bad["upstream"] = json!("255.255.255.255");
+    let error = dynet_api::control::Payload::check(bad.to_string().as_bytes())
+        .err()
+        .expect("broadcast upstream refused")
+        .to_string();
+    assert!(error.contains("upstream"), "{error}");
+}

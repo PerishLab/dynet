@@ -73,7 +73,12 @@ are.
 - The `Manifest` is the one input that says what Dynet routes and through
   what: `nodes` with their protocol material, `clusters`, ordered `rules`, a
   `fallback` and a `drain`, as one JSON document (`version` 1) read by
-  `dynet-core` and refused whole when any part of it is wrong. A node's nested
+  `dynet-core` and refused whole when any part of it is wrong. Its optional
+  `generation` field is a non-empty string authoring label (such as `"probe"` or
+  `"pixel-full"`), distinct from the monotonic integer envelope `--generation`
+  passed to `secrets publish` or `secrets seal`; `dynet check` validates a
+  pre-seal business configuration or manifest locally with actionable
+  diagnostics. A node's nested
   material is read as dotted names (`tls.reality.public_key`), and `dynet-api`
   checks at load that every pool node can front a stream and every exit speaks
   Shadowsocks 2022, so a manifest that names an unusable node never stands.
