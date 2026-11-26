@@ -22,19 +22,49 @@ struct Wire<'a> {
     retain: u64,
 }
 
+const LIMIT: usize = 1024 * 1024;
+
 impl Payload {
     pub fn read(bytes: &[u8]) -> Result<Self, Error> {
-        let wire: Wire<'_> = serde_json::from_slice(bytes).map_err(|_| refused())?;
-        if wire.version != 1 || wire.retain == 0 {
-            return Err(refused());
+        Self::parse(bytes).map_err(|_| refused())
+    }
+
+    pub fn check(bytes: &[u8]) -> Result<Self, Error> {
+        Self::parse(bytes)
+    }
+
+    fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.len() > LIMIT {
+            return Err(Error::new(format!(
+                "business configuration exceeds the {LIMIT}-byte payload bound"
+            )));
+        }
+        let wire: Wire<'_> = serde_json::from_slice(bytes).map_err(|error| {
+            Error::new(format!(
+                "the business configuration does not parse: {error}"
+            ))
+        })?;
+        if wire.version != 1 {
+            return Err(Error::new(format!(
+                "business configuration version {} is not version 1",
+                wire.version
+            )));
+        }
+        if wire.retain == 0 {
+            return Err(Error::new(
+                "business configuration retain must be a positive number of seconds",
+            ));
         }
         if wire.upstream.is_unspecified()
             || wire.upstream.is_multicast()
             || wire.upstream.is_broadcast()
         {
-            return Err(refused());
+            return Err(Error::new(format!(
+                "business configuration upstream {} must be a unicast IPv4 address",
+                wire.upstream
+            )));
         }
-        let loaded = manifest::load(wire.manifest.get()).map_err(|_| refused())?;
+        let loaded = manifest::load(wire.manifest.get())?;
         Ok(Self {
             loaded,
             upstream: wire.upstream,

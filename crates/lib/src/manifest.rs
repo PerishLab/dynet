@@ -79,12 +79,13 @@ impl Manifest {
                 wire.version
             )));
         }
+        let generation = generation(wire.generation)?;
         let nodes = declare(&wire.nodes)?;
         let drained = drained(&wire.drain, &nodes)?;
         let clusters = shape::clusters(&wire.clusters, &nodes, &drained)?;
         let table = table(&wire.rules, &wire.fallback, &clusters)?;
         Ok(Self {
-            generation: wire.generation,
+            generation,
             nodes,
             clusters,
             table,
@@ -126,6 +127,33 @@ impl Manifest {
             Form::Alias(target) => self.cluster(target),
             Form::Pool(_) | Form::Via(..) => Some(cluster),
         }
+    }
+}
+
+fn generation(told: Option<Value>) -> Result<Option<String>, Error> {
+    match told {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => match text.trim().is_empty() {
+            true => Err(Error::new(
+                "manifest.generation must be a non-empty string label (such as \"probe\" or \"pixel-full\"); omit it if unused, and pass the monotonic integer version to secrets publish/seal --generation",
+            )),
+            false => Ok(Some(text)),
+        },
+        Some(other) => Err(Error::new(format!(
+            "manifest.generation must be a string label (such as \"probe\" or \"pixel-full\"), not {}; the monotonic integer version belongs on secrets publish/seal --generation",
+            kind(&other)
+        ))),
+    }
+}
+
+fn kind(value: &Value) -> &'static str {
+    match value {
+        Value::Number(_) => "a number",
+        Value::Bool(_) => "a boolean",
+        Value::Array(_) => "an array",
+        Value::Object(_) => "an object",
+        Value::Null => "null",
+        Value::String(_) => "a string",
     }
 }
 

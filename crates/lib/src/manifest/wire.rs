@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 pub(super) struct Wire {
     pub(super) version: u32,
     #[serde(default)]
-    pub(super) generation: Option<String>,
+    pub(super) generation: Option<Value>,
     pub(super) nodes: Vec<Map<String, Value>>,
     pub(super) clusters: Vec<Pool>,
     pub(super) rules: Vec<Line>,

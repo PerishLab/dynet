@@ -49,6 +49,7 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    Check(source::Errand),
     Seed(seed::Errand),
     Doctor,
     Up {
@@ -210,6 +211,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             println!("{recipient}");
             Ok(ExitCode::SUCCESS)
         }
+        Command::Check(errand) => source::check(&errand),
         Command::Doctor => Boundary(instance).doctor(&config),
         Command::Seed(errand) => seed::seed(&errand, &instance, &state),
         Command::Up { claim, bare } => Boundary(instance).raise(&config, &claim, bare),
