@@ -1,4 +1,0 @@
-[env.vars]
-RUNSEAL_REPO_LOCAL_DIR = "local://"
-RUNSEAL_REPO_SECRETS_DIR = "local://secrets"
-RUNSEAL_REPO_TMP_DIR = "local://tmp"
