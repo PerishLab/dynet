@@ -90,3 +90,43 @@ impl Device {
             .map_err(|_| Error::other(format!("the device {key} is not a number")))
     }
 }
+
+pub fn boot() -> Result<(String, u64)> {
+    let id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")?
+        .trim()
+        .to_owned();
+    if id.is_empty() {
+        return Err(Error::other("the kernel boot identity is empty"));
+    }
+    let mut spec: libc::timespec = unsafe { std::mem::zeroed() };
+    let code = unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut spec) };
+    if code < 0 {
+        return Err(Error::last_os_error());
+    }
+    let seconds = u64::try_from(spec.tv_sec)
+        .map_err(|_| Error::other("the monotonic boot clock is negative"))?;
+    Ok((id, seconds))
+}
+
+pub fn detach() -> Result<()> {
+    let code = unsafe { libc::setsid() };
+    if code < 0 && Error::last_os_error().raw_os_error() != Some(libc::EPERM) {
+        return Err(Error::last_os_error());
+    }
+    let previous = unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
+    if previous == libc::SIG_ERR {
+        return Err(Error::last_os_error());
+    }
+    Ok(())
+}
+
+pub fn alive(pid: u32) -> bool {
+    let Ok(target) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if target <= 0 {
+        return false;
+    }
+    let code = unsafe { libc::kill(target, 0) };
+    code == 0 || Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}

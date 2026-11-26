@@ -12,6 +12,8 @@ mod source;
 mod watch;
 
 use platform::Boundary;
+#[cfg(target_os = "linux")]
+use platform::Cutover;
 #[cfg(any(windows, target_os = "macos"))]
 use platform::Service;
 
@@ -63,6 +65,9 @@ enum Command {
     Divert(watch::Errand),
     Carry(carry::Errand),
     Flush(flush::Errand),
+    #[cfg(target_os = "linux")]
+    #[command(subcommand)]
+    Cutover(Cutover),
     #[cfg(any(windows, target_os = "macos"))]
     #[command(subcommand)]
     Service(Service),
@@ -164,7 +169,9 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let cli = Cli::parse();
-    let observer = if matches!(&cli.command, Command::Divert(errand) if !errand.unit) {
+    let continuous = matches!(&cli.command, Command::Divert(errand) if !errand.unit)
+        || matches!(&cli.command, Command::Cutover(Cutover::Watch { .. }));
+    let observer = if continuous {
         None
     } else {
         observation::start(observation::name(&cli.command))
@@ -223,6 +230,8 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             carry::carry(&errand, source::loaded(&session)?)
         }
         Command::Flush(errand) => flush::flush(&instance, &errand, &state),
+        #[cfg(target_os = "linux")]
+        Command::Cutover(cutover) => platform::cutover::run(&cutover, &instance, &state),
         #[cfg(any(windows, target_os = "macos"))]
         Command::Service(service) => Boundary(instance).service(&config, &service, &state),
         Command::Resolve {

@@ -1,4 +1,6 @@
 #[cfg(target_os = "linux")]
+pub(crate) mod cutover;
+#[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -7,6 +9,8 @@ pub(crate) mod procd;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(target_os = "linux")]
+pub(crate) use cutover::Cutover;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::Boundary;
 #[cfg(target_os = "macos")]

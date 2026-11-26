@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 pub mod control;
+#[cfg(target_os = "linux")]
+pub use control::cutover;
 pub mod host;
 pub mod inbound;
 pub mod manifest;

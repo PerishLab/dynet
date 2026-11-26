@@ -422,3 +422,57 @@ refuses startup. Preserve the entire directory for backup and recovery.
 Existing address checkpoints retain their format for rollback. Older binaries
 retain address custody but do not enforce alias ownership. New runtimes can
 resume enforcement from unexpired bindings on return.
+
+## Paired-envelope cutover
+
+On Linux gateways (such as OpenWrt `dynet-gateway` instances `split` and
+`pixel`), `dynet cutover` wraps file-source policy cutovers in a router-local
+commit-confirm transaction without altering the `secrets` envelope wire format
+or monotonic generation anti-replay invariant:
+
+1. **`arm`** (`dynet cutover arm --bootstrap PATH --candidate PATH --rollback PATH --window SECS`):
+   - Requires a `file` bootstrap source and strict private custody (`0700` state
+     directory, `0600` regular single-link files, root-owned by default;
+     `--user` selects current-user private custody for isolated non-root
+     fixture rehearsals).
+   - Authenticates and decrypts both `candidate` (generation `N`) and `rollback`
+     (generation `N+1`) against the bootstrap publisher and device identity,
+     and validates both decrypted payloads with `Payload::check` (failing fast
+     on malformed manifests or non-string `manifest.generation` before arming).
+   - Requires `rollback.generation == candidate.generation + 1`,
+     `candidate.generation > current_floor`, and semantic equivalence between
+     the `rollback` payload and the currently confirmed policy.
+   - Stages private copies of both envelopes and persists `state.json` under
+     `<state>/<instance>.cutover/` with a random 32-hex transaction id in phase
+     `armed`. Refuses to arm while another transaction is active or retains
+     `failed`/`unknown` state.
+2. **`apply`** (`dynet cutover apply --id TX_ID`):
+   - Transitions `armed -> applying` with kernel `boot_id` and monotonic
+     `CLOCK_BOOTTIME` deadline before touching the live envelope.
+   - Spawns a detached router-local deadline worker (`dynet cutover watch`,
+     detached via `setsid`, `SIGHUP` ignored, null stdio) and waits for its
+     readiness handshake and live PID before atomically replacing the live
+     target envelope with `candidate` (`gen N`) and transitioning `applying ->
+     active`. If the deadline worker cannot become ready, `candidate` is never
+     installed.
+3. **`confirm`** (`dynet cutover confirm --id TX_ID`):
+   - Requires exact `TX_ID`, phase `active`, unexpired monotonic deadline on
+     the same `boot_id`, and (when `<state>/<instance>.control/checkpoint`
+     exists) confirmed `applied` receipt matching `candidate` (`gen N`).
+   - Transitions to `confirmed`, disarms the watcher, and removes staged
+     candidate and rollback envelopes. Stale, duplicate, mismatched or expired
+     confirmations are refused.
+4. **`rollback`** (`dynet cutover rollback --id TX_ID`) and **expiry auto-revert**:
+   - Either explicit `rollback` or deadline expiry (observed by the detached
+     `watch` worker or one-shot `dynet cutover reconcile` after reboot)
+     transitions through `reverting`, atomically installs the staged `rollback`
+     envelope (`gen N+1`) onto the file source so the running worker hot-loads
+     it with zero restart, and verifies checkpoint convergence to `gen N+1`.
+   - Verified convergence transitions to `reverted` and cleans staged envelopes.
+     Any install failure or unconfirmed hot-load convergence transitions to
+     `failed` or `unknown`, retaining both `state.json` and the staged rollback
+     envelope until explicitly inspected and cleared (`dynet cutover clear --id
+     TX_ID`).
+
+Production OpenWrt rollout requires isolated fixture rehearsal and explicit
+operator review before live adoption.

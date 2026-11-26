@@ -27,6 +27,8 @@ pub(crate) fn name(command: &crate::Command) -> &'static str {
         crate::Command::Spread { .. } => "spread",
         crate::Command::Carry(_) => "carry",
         crate::Command::Flush(_) => "flush",
+        #[cfg(target_os = "linux")]
+        crate::Command::Cutover(_) => "cutover",
         #[cfg(any(windows, target_os = "macos"))]
         crate::Command::Service(_) => "service",
     }

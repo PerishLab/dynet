@@ -1,5 +1,9 @@
 mod cache;
 mod custody;
+#[cfg(target_os = "linux")]
+mod cutover;
+#[cfg(target_os = "linux")]
+mod lane;
 mod projection;
 mod recovery;
 mod seed;
