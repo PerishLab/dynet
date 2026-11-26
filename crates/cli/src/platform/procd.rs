@@ -1,5 +1,11 @@
 use crate::watch::Stage;
 use dynet_core::{Error, Instance};
+use std::path::PathBuf;
+
+pub(crate) fn executable() -> Result<PathBuf, Error> {
+    std::env::current_exe()
+        .map_err(|error| Error::new(format!("cannot locate the dynet executable: {error}")))
+}
 
 pub(crate) fn render(instance: &Instance, stage: &Stage) -> Result<String, Error> {
     if stage.config.local {
@@ -9,8 +15,7 @@ pub(crate) fn render(instance: &Instance, stage: &Stage) -> Result<String, Error
         .state
         .configured()
         .ok_or_else(|| Error::new("procd worker requires an explicit state root"))?;
-    let executable = std::env::current_exe()
-        .map_err(|error| Error::new(format!("cannot locate the procd executable: {error}")))?;
+    let executable = executable()?;
     let executable = executable
         .to_str()
         .ok_or_else(|| Error::new("procd executable path is not UTF-8"))?;

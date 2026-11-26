@@ -11,6 +11,8 @@ pub(crate) use cache::Scope;
 pub use cache::{Cache, Checkpoint};
 pub use candidate::{Candidate, Decoder, Incoming};
 pub use dynet_host::Private;
+#[cfg(target_os = "linux")]
+pub use enrollment::cutover;
 pub use enrollment::{Bootstrap, Seed, Source};
 pub use payload::Payload;
 pub use projection::Projection;

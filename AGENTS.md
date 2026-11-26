@@ -459,7 +459,12 @@ Stopping or crashing a worker retains its protection; process supervision alone
 proves neither readiness nor quiescence for cleanup. Native startup under these
 ceilings and the complete fenced lifecycle must be qualified before live use.
 The renderer's environment grant reads only the current executable identity;
-machine settings still come from the ordinary configuration cascade.
+machine settings still come from the ordinary configuration cascade. Linux
+`cutover` wraps file-source gateway updates in a paired-envelope commit-confirm
+transaction (`candidate gen N` + pre-validated `rollback gen N+1` under private
+`0700`/`0600` `<state>/<instance>.cutover/` state) with a detached router-local
+deadline worker that survives SSH disconnect and auto-reverts to `gen N+1` on
+expiry without restarting workers or altering the envelope wire format.
 
 `plumb.toml` declares the product `dynet`, its authority and the one binary
 `dynet` for Linux GNU and Windows MSVC on x86-64, macOS on Apple Silicon,
