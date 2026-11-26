@@ -40,7 +40,7 @@ struct Flight<'a> {
 pub fn shake(stream: TcpStream, reality: &Reality) -> Result<Session, Error> {
     stream
         .set_read_timeout(Some(BUDGET))
-        .map_err(|error| Error::new(format!("cannot bound the handshake: {error}")))?;
+        .map_err(|error| Error::io("cannot bound the handshake", error))?;
     let curve = StaticSecret::random_from_rng(OsRng);
     let (lattice, encoded) = MlKem768::generate(&mut OsRng);
     let shares = Shares {
@@ -54,13 +54,13 @@ pub fn shake(stream: TcpStream, reality: &Reality) -> Result<Session, Error> {
     let auth = authorize(&curve, reality, &seed, &mut message)?;
     let listening = stream
         .try_clone()
-        .map_err(|error| Error::new(format!("cannot halve the node session: {error}")))?;
+        .map_err(|error| Error::io("cannot halve the node session", error))?;
     let mut wire = Wire::new(listening);
     let mut record = vec![HANDSHAKE, 3, 1];
     hello::extend(&mut record, &message);
     (&stream)
         .write_all(&record)
-        .map_err(|error| Error::new(format!("cannot greet the node: {error}")))?;
+        .map_err(|error| Error::io("cannot greet the node", error))?;
     let (greeting, answer) = greeting(&mut wire)?;
     message.extend_from_slice(&greeting);
     let shared = agree(&curve, &lattice, &answer)?;

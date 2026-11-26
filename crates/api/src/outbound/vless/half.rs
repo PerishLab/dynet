@@ -50,7 +50,7 @@ pub fn split(
         .wire
         .stream()
         .set_read_timeout(Some(BORNE))
-        .map_err(|error| Error::new(format!("cannot bound the node session: {error}")))?;
+        .map_err(|error| Error::io("cannot bound the node session", error))?;
     Ok((
         Egress {
             writer,
@@ -156,7 +156,7 @@ impl Write for Egress {
     fn write(&mut self, body: &[u8]) -> std::io::Result<usize> {
         match self.send(body) {
             Ok(()) => Ok(body.len()),
-            Err(error) => Err(std::io::Error::other(error.to_string())),
+            Err(error) => Err(error.wrapped()),
         }
     }
 
@@ -168,9 +168,7 @@ impl Write for Egress {
 impl Read for Ingress {
     fn read(&mut self, room: &mut [u8]) -> std::io::Result<usize> {
         while self.spare.is_empty() {
-            let taken = self
-                .receive()
-                .map_err(|error| std::io::Error::other(error.to_string()));
+            let taken = self.receive().map_err(Error::wrapped);
             match taken? {
                 None => return Ok(0),
                 Some(part) => self.spare = part,

@@ -1,4 +1,4 @@
-use super::{Circuit, Egress, Ingress};
+use super::{Circuit, Egress, Failure, Ingress, Stage};
 use crate::manifest::Entry;
 use crate::outbound::{
     vless::Reality,
@@ -53,6 +53,7 @@ impl Front {
 
     pub fn board(&self, host: &str, port: u16) -> Result<(Egress, Ingress), Fault> {
         self.boarding(host, port, None)
+            .map_err(|failure| failure.fault)
     }
 
     pub(super) fn boarding(
@@ -60,13 +61,13 @@ impl Front {
         host: &str,
         port: u16,
         gate: Option<&Circuit>,
-    ) -> Result<(Egress, Ingress), Fault> {
+    ) -> Result<(Egress, Ingress), Failure> {
+        let connect = |error| Stage::Connect.failed(Fault::Reach, error);
+        let handshake = |error| Stage::Handshake.failed(Fault::Handshake, error);
         match self {
             Self::Vmess(endpoint) => {
-                let mut tunnel = Tunnel::connect(endpoint, gate).map_err(|_| Fault::Reach)?;
-                tunnel
-                    .board(endpoint, host, port)
-                    .map_err(|_| Fault::Handshake)?;
+                let mut tunnel = Tunnel::connect(endpoint, gate).map_err(connect)?;
+                tunnel.board(endpoint, host, port).map_err(handshake)?;
                 let (egress, ingress) = tunnel.split();
                 Ok((
                     Egress::Vmess(Box::new(egress)),
@@ -74,10 +75,11 @@ impl Front {
                 ))
             }
             Self::Vless(reality) => {
-                let stream = reality.socket(gate).map_err(|_| Fault::Reach)?;
+                let stream = reality.socket(gate).map_err(connect)?;
+                let session = reality.handshake(stream).map_err(handshake)?;
                 let (egress, ingress) = reality
-                    .open(stream, host, port)
-                    .map_err(|_| Fault::Handshake)?;
+                    .request(session, host, port)
+                    .map_err(|error| Stage::Open.failed(Fault::Handshake, error))?;
                 Ok((Egress::Vless(egress), Ingress::Vless(ingress)))
             }
         }

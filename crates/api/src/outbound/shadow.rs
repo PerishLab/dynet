@@ -25,6 +25,7 @@ pub struct Shroud {
     inward: Option<Aes128Gcm>,
     incoming: u64,
     spare: Option<Vec<u8>>,
+    accepted: bool,
 }
 
 pub fn veil(secret: [u8; SALT]) -> Result<(Cloak, Shroud), Error> {
@@ -42,6 +43,7 @@ pub fn veil(secret: [u8; SALT]) -> Result<(Cloak, Shroud), Error> {
         inward: None,
         incoming: 0,
         spare: None,
+        accepted: false,
     };
     Ok((cloak, shroud))
 }
@@ -77,7 +79,7 @@ impl Cloak {
         request.extend_from_slice(&self.seal(&fixed)?);
         request.extend_from_slice(&self.seal(&asking)?);
         out.write_all(&request)
-            .map_err(|error| Error::new(format!("cannot greet the exit: {error}")))
+            .map_err(|error| Error::io("cannot greet the exit", error))
     }
 
     pub fn send(&mut self, out: &mut impl Write, body: &[u8]) -> Result<(), Error> {
@@ -85,7 +87,7 @@ impl Cloak {
         let mut framed = self.seal(&length.to_be_bytes())?;
         framed.extend_from_slice(&self.seal(body)?);
         out.write_all(&framed)
-            .map_err(|error| Error::new(format!("cannot write to the exit: {error}")))
+            .map_err(|error| Error::io("cannot write to the exit", error))
     }
 
     fn seal(&mut self, body: &[u8]) -> Result<Vec<u8>, Error> {
@@ -104,6 +106,10 @@ impl Cloak {
 }
 
 impl Shroud {
+    pub(crate) fn accepted(&self) -> bool {
+        self.accepted
+    }
+
     pub fn receive(&mut self, inp: &mut impl Read) -> Result<Option<Vec<u8>>, Error> {
         if self.inward.is_none() {
             self.accept(inp)?;
@@ -126,7 +132,10 @@ impl Shroud {
         read(inp, &mut salt)?;
         self.inward = Some(cipher(&self.secret, &salt));
         let Some(fixed) = self.take(inp, 1 + 8 + SALT + 2 + TAG)? else {
-            return Err(Error::new("the exit closed before answering"));
+            return Err(Error::io(
+                "the exit closed before answering",
+                std::io::ErrorKind::UnexpectedEof.into(),
+            ));
         };
         if fixed.first() != Some(&ANSWERING) {
             return Err(Error::new("the exit answered with the wrong header kind"));
@@ -137,6 +146,7 @@ impl Shroud {
             ));
         }
         timely(&fixed[1..9])?;
+        self.accepted = true;
         let told = usize::from(u16::from_be_bytes([fixed[9 + SALT], fixed[10 + SALT]]));
         if told > 0 {
             self.spare = self.take(inp, told + TAG)?;
@@ -185,7 +195,7 @@ fn read(inp: &mut impl Read, room: &mut [u8]) -> Result<bool, Error> {
     match inp.read_exact(room) {
         Ok(()) => Ok(true),
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(Error::new(format!("the exit stopped speaking: {error}"))),
+        Err(error) => Err(Error::io("the exit stopped speaking", error)),
     }
 }
 

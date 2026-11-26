@@ -33,7 +33,7 @@ impl Egress {
     pub(crate) fn greet(&mut self, request: &[u8]) -> Result<(), Error> {
         self.stream
             .write_all(request)
-            .map_err(|error| Error::new(format!("cannot greet the node: {error}")))
+            .map_err(|error| Error::io("cannot greet the node", error))
     }
 
     pub fn send(&mut self, body: &[u8]) -> Result<(), Error> {
@@ -43,7 +43,7 @@ impl Egress {
     pub fn done(&self) -> Result<(), Error> {
         self.stream
             .shutdown(std::net::Shutdown::Write)
-            .map_err(|error| Error::new(format!("cannot close the node session: {error}")))
+            .map_err(|error| Error::io("cannot close the node session", error))
     }
 }
 
@@ -58,6 +58,10 @@ impl Ingress {
             verify,
             fault: None,
         }
+    }
+
+    pub(crate) fn accepted(&self) -> bool {
+        self.inbound.is_some()
     }
 
     pub fn fault(&self) -> Option<Fault> {
@@ -112,9 +116,7 @@ impl Ingress {
         let outcome = stream.read_exact(&mut buffer);
         if let Err(error) = outcome {
             self.fault = Some(ending(error.kind()));
-            return Err(Error::new(format!(
-                "the node closed before answering: {error}"
-            )));
+            return Err(Error::io("the node closed before answering", error));
         }
         Ok(buffer)
     }
@@ -143,7 +145,7 @@ impl Write for Egress {
     fn write(&mut self, body: &[u8]) -> std::io::Result<usize> {
         match self.send(body) {
             Ok(()) => Ok(body.len()),
-            Err(error) => Err(std::io::Error::other(error.to_string())),
+            Err(error) => Err(error.wrapped()),
         }
     }
 
@@ -155,9 +157,7 @@ impl Write for Egress {
 impl Read for Ingress {
     fn read(&mut self, room: &mut [u8]) -> std::io::Result<usize> {
         while self.spare.is_empty() {
-            let taken = self
-                .receive()
-                .map_err(|error| std::io::Error::other(error.to_string()));
+            let taken = self.receive().map_err(Error::wrapped);
             match taken? {
                 None => return Ok(0),
                 Some(part) => self.spare = part,

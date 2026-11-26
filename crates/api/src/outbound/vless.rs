@@ -78,7 +78,20 @@ impl Reality {
         host: &str,
         port: u16,
     ) -> Result<(Egress, Ingress), Error> {
-        let session = handshake::shake(stream, self)?;
+        let session = self.handshake(stream)?;
+        self.request(session, host, port)
+    }
+
+    pub(super) fn handshake(&self, stream: TcpStream) -> Result<session::Session, Error> {
+        handshake::shake(stream, self)
+    }
+
+    pub(super) fn request(
+        &self,
+        session: session::Session,
+        host: &str,
+        port: u16,
+    ) -> Result<(Egress, Ingress), Error> {
         let mut request = vec![0u8];
         request.extend_from_slice(&self.identity);
         match self.vision {
