@@ -53,7 +53,7 @@ channel = "rc"
 
 [workflow.hash.guard]
 "rust" = ["suite://cargo"]
-"ectropy" = ["ectropy.toml", "crates"]
+"ectropy" = ["plumb.toml", "crates"]
 "plumb" = ["*"]
 
 [release.windows]
@@ -63,3 +63,16 @@ scope = "machine"
 binary = "dynet"
 root = "packaging/apk"
 profile = "openwrt-aarch64-cortex-a53"
+
+[[ectropy.grant]]
+paths = ["crates/host/src/windows/device/resource.rs"]
+syntax = "embed"
+
+[[ectropy.grant]]
+paths = [
+    "crates/api/src/host/windows/place.rs",
+    "crates/cli/src/platform/macos/service.rs",
+    "crates/cli/src/platform/procd.rs",
+    "crates/host/src/windows/device/resource.rs",
+]
+syntax = "environment"
