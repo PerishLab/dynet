@@ -67,7 +67,7 @@ fn hosting(args: &Serve, instance: &Instance, state: &State) -> Result<ExitCode,
     } else {
         Private::machine()
     };
-    let session = Session::open(&args.bootstrap, instance, state, private)?;
+    let session = Session::unmarked(&args.bootstrap, instance, state, private)?;
     let listener = TcpListener::bind(args.listen)
         .map_err(|error| Error::new(format!("cannot bind {}: {error}", args.listen)))?;
     let stop = Arc::new(AtomicBool::new(false));

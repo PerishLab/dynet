@@ -32,6 +32,25 @@ impl Session {
         state: &State,
         private: Private,
     ) -> Result<Self, Error> {
+        Self::start(path, instance, state, (private, instance.mark()))
+    }
+
+    pub fn unmarked(
+        path: &Path,
+        instance: &Instance,
+        state: &State,
+        private: Private,
+    ) -> Result<Self, Error> {
+        Self::start(path, instance, state, (private, 0))
+    }
+
+    fn start(
+        path: &Path,
+        instance: &Instance,
+        state: &State,
+        options: (Private, u32),
+    ) -> Result<Self, Error> {
+        let (private, mark) = options;
         private.folder(state.root()).map_err(custody)?;
         let legacy = state.root().join(format!("{}.ledger", instance.get()));
         if legacy.try_exists().map_err(custody)? {
@@ -43,7 +62,7 @@ impl Session {
         let identity = bootstrap.identity(private)?;
         let trust = bootstrap.trust(&identity)?;
         let decoder = Decoder::new(bootstrap.reader()?, identity);
-        let client = bootstrap.client(private, instance.mark())?.map(Arc::new);
+        let client = bootstrap.client(private, mark)?.map(Arc::new);
         let cache = Arc::new(Cache::open(
             &state.root().join(format!("{}.control", instance.get())),
             trust,
