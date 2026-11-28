@@ -1,4 +1,6 @@
 use super::refused;
+use crate::manifest::export::Spec;
+use crate::manifest::export::spec::Wire as Projection;
 use crate::manifest::{self, Loaded};
 use dynet_core::Error;
 use serde::Deserialize;
@@ -10,6 +12,7 @@ pub struct Payload {
     pub loaded: Loaded,
     pub upstream: Ipv4Addr,
     pub retain: u64,
+    pub projection: Option<Spec>,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +23,8 @@ struct Wire<'a> {
     manifest: &'a RawValue,
     upstream: Ipv4Addr,
     retain: u64,
+    #[serde(default)]
+    projection: Option<Projection>,
 }
 
 const LIMIT: usize = 1024 * 1024;
@@ -65,10 +70,12 @@ impl Payload {
             )));
         }
         let loaded = manifest::load(wire.manifest.get())?;
+        let projection = wire.projection.map(Spec::parse).transpose()?;
         Ok(Self {
             loaded,
             upstream: wire.upstream,
             retain: wire.retain,
+            projection,
         })
     }
 }

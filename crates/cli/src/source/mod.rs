@@ -1,3 +1,5 @@
+pub mod project;
+
 use dynet_api::{
     Loaded,
     control::{Payload, Private, Session},
@@ -72,7 +74,7 @@ pub fn check(errand: &Errand) -> Result<ExitCode, Error> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn load(path: &Path) -> Result<Vec<u8>, Error> {
+pub(super) fn load(path: &Path) -> Result<Vec<u8>, Error> {
     if path == Path::new("-") {
         return bounded(std::io::stdin().lock());
     }

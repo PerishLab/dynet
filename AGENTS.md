@@ -94,6 +94,15 @@ are.
 - `drain` removes nodes, or every node of a provider, from the pools that list
   them; a provider is a node's own `provider`, or the host part of its label
   before `/`. It is the only operator intervention: there is no pin.
+- A `Projection` is a one-way read-only egress rendering of Dynet's own
+  authenticated `Manifest` into a compatible client format (such as Mihomo
+  YAML) for endpoints that cannot run native Dynet. It is distinct from
+  importing external subscriptions, which remains out of scope. Per-recipient
+  256-bit `path_seed` values live inside the encrypted `projection` payload
+  section, derive deterministic time-slot URL tokens (`HMAC-SHA256`), and
+  remain redacted from debug output and logs. `dynet project serve` binds
+  loopback only, renders purely in memory from the authenticated `secrets`
+  session, and answers `404` for every unknown path or after signed revocation.
 
 - `Bearing` is what a piece of traffic needs, `Stream` or `Datagram`. A cluster
   carries datagrams when any of its nodes does, and datagram selection chooses

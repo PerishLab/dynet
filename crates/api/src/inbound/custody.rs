@@ -60,6 +60,7 @@ impl Warren<'_> {
                         .parse()
                         .map_err(|_| Error::new("the upstream is invalid"))?,
                     retain: slot.retain,
+                    projection: None,
                 };
                 let mut held = Held::new(payload, Some(&slot))?;
                 held.fence.close()?;
