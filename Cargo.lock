@@ -2234,9 +2234,9 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.6.0"
+version = "0.7.0"
 source = "sparse+https://cargo.perish.uk/"
-checksum = "cf9e30131eb06b199d1c19afdd171b969c4c84761a08ba2310ba682cb591b825"
+checksum = "44a64d5f07b53af94f872608e5c2f7ced66a33ef6e934a2183f181daa802b3ea"
 dependencies = [
  "age",
  "base64 0.22.1",
