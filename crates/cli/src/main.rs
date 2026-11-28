@@ -164,6 +164,16 @@ impl Config {
     }
 }
 
+fn continuous(command: &Command) -> bool {
+    match command {
+        Command::Divert(errand) => !errand.unit,
+        Command::Project(source::project::Command::Serve(_)) => true,
+        #[cfg(target_os = "linux")]
+        Command::Cutover(Cutover::Watch { .. }) => true,
+        _ => false,
+    }
+}
+
 fn main() -> ExitCode {
     debug_assert_eq!(dynet_api::VERSION, env!("CARGO_PKG_VERSION"));
     if let Err(error) = plumb::identity!("DYNET") {
@@ -171,13 +181,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let cli = Cli::parse();
-    let continuous = matches!(&cli.command, Command::Divert(errand) if !errand.unit)
-        || matches!(&cli.command, Command::Cutover(Cutover::Watch { .. }))
-        || matches!(
-            &cli.command,
-            Command::Project(source::project::Command::Serve(_))
-        );
-    let observer = if continuous {
+    let observer = if continuous(&cli.command) {
         None
     } else {
         observation::start(observation::name(&cli.command))
