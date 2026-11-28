@@ -66,7 +66,9 @@ fn projection() {
     let zero = render(&payload.loaded, Some(spec), 0).unwrap();
     let one = render(&payload.loaded, Some(spec), 1800).unwrap();
 
-    assert!(zero.contains("ipv6: false"));
+    assert!(zero.contains("dns:\n  enable: true\n  ipv6: false\n  enhanced-mode: fake-ip\n"));
+    assert!(zero.contains("  nameserver:\n    - https://dns.alidns.com/dns-query\n"));
+    assert!(zero.contains("  proxy-server-nameserver:\n    - 223.5.5.5\n"));
     assert!(zero.contains("udp-over-tcp: true"));
     assert!(zero.contains("udp-over-tcp-version: 2"));
     assert!(zero.contains("dialer-proxy: \"zxiyun/tunnel\""));
