@@ -476,3 +476,36 @@ or monotonic generation anti-replay invariant:
 
 Production OpenWrt rollout requires isolated fixture rehearsal and explicit
 operator review before live adoption.
+
+## Read-only client projection
+
+An optional `projection` object inside the v1 encrypted business configuration
+enables one-way read-only Mihomo YAML rendering (`dynet-api::project`) without
+importing third-party subscriptions or exposing plaintext to `secrets-api`:
+
+```json
+"projection": {
+  "health_check_url": "http://la.vonet.online/generate_204",
+  "content_interval": 1800,
+  "path_interval": 86400,
+  "grace_slots": 1,
+  "recipients": [
+    { "name": "mom", "seed": "BASE64URL_OR_HEX_SEED" }
+  ]
+}
+```
+
+- Each recipient declares a unique ASCII name and an at-least-16-byte (32-byte
+  recommended) `seed` held in `Zeroizing` memory and redacted from `Debug` and
+  errors.
+- Deterministic slot tokens use `Base64URL(HMAC-SHA256(seed, "dynet.project.v1:" || slot))`
+  where `slot = floor(unix_time / path_interval)`. Active matching covers the
+  current slot and up to `grace_slots` preceding slots in constant time.
+- `dynet project serve` binds loopback only, loads its authenticated encrypted
+  configuration through `dynet-api::control::Session`, renders Mihomo YAML
+  purely in memory (rotating candidate leg order each `content_interval`,
+  expanding two-hop `via` clusters onto `dialer-proxy`, respecting `drain` and
+  `disabled`, and keeping `ipv6: false`), and answers `404` for all non-matching
+  paths or immediately upon signed revocation.
+- `dynet project url` derives the active (and optional grace) URL offline from
+  the operator's local payload input without SSH access or local rotation state.

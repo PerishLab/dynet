@@ -65,6 +65,8 @@ enum Command {
     Divert(watch::Errand),
     Carry(carry::Errand),
     Flush(flush::Errand),
+    #[command(subcommand)]
+    Project(source::project::Command),
     #[cfg(target_os = "linux")]
     #[command(subcommand)]
     Cutover(Cutover),
@@ -170,7 +172,11 @@ fn main() -> ExitCode {
     }
     let cli = Cli::parse();
     let continuous = matches!(&cli.command, Command::Divert(errand) if !errand.unit)
-        || matches!(&cli.command, Command::Cutover(Cutover::Watch { .. }));
+        || matches!(&cli.command, Command::Cutover(Cutover::Watch { .. }))
+        || matches!(
+            &cli.command,
+            Command::Project(source::project::Command::Serve(_))
+        );
     let observer = if continuous {
         None
     } else {
@@ -230,6 +236,7 @@ fn run(cli: Cli) -> Result<ExitCode, Error> {
             carry::carry(&errand, source::loaded(&session)?)
         }
         Command::Flush(errand) => flush::flush(&instance, &errand, &state),
+        Command::Project(command) => source::project::run(command, &instance, &state),
         #[cfg(target_os = "linux")]
         Command::Cutover(cutover) => platform::cutover::run(&cutover, &instance, &state),
         #[cfg(any(windows, target_os = "macos"))]

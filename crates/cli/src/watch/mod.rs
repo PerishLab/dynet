@@ -114,6 +114,7 @@ pub fn carried(
             )?,
             upstream: std::net::Ipv4Addr::new(1, 1, 1, 1),
             retain: 86400,
+            projection: None,
         });
     let retain = payload.retain;
     let mut active = inbound::Held::new(payload, None)?;

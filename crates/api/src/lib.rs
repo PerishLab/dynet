@@ -9,6 +9,8 @@ pub mod manifest;
 pub mod outbound;
 pub mod resolver;
 
+pub use manifest::export as project;
+
 pub use manifest::{Entry, Loaded};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
