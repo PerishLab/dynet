@@ -103,19 +103,37 @@ impl Document {
     }
 
     pub(super) fn header(&mut self) {
-        self.0.push_str(
-            "mixed-port: 7897\nallow-lan: false\nmode: rule\nlog-level: warning\nipv6: false\n\
-unified-delay: true\ntcp-concurrent: true\nfind-process-mode: strict\ndns:\n  enable: true\n\
-  ipv6: false\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter:\n",
-        );
+        self.0.push_str(concat!(
+            "mixed-port: 7897\n",
+            "allow-lan: false\n",
+            "mode: rule\n",
+            "log-level: warning\n",
+            "ipv6: false\n",
+            "unified-delay: true\n",
+            "tcp-concurrent: true\n",
+            "find-process-mode: strict\n",
+            "dns:\n",
+            "  enable: true\n",
+            "  ipv6: false\n",
+            "  enhanced-mode: fake-ip\n",
+            "  fake-ip-range: 198.18.0.1/16\n",
+            "  fake-ip-filter:\n",
+        ));
         for item in FILTER {
             let _ = writeln!(self.0, "    - {}", quote(item));
         }
-        self.0.push_str(
-            "  default-nameserver:\n    - 223.5.5.5\n    - 119.29.29.29\n  nameserver:\n\
-    - https://dns.alidns.com/dns-query\n    - https://doh.pub/dns-query\n\
-  proxy-server-nameserver:\n    - 223.5.5.5\n    - 119.29.29.29\n  respect-rules: true\n",
-        );
+        self.0.push_str(concat!(
+            "  default-nameserver:\n",
+            "    - 223.5.5.5\n",
+            "    - 119.29.29.29\n",
+            "  nameserver:\n",
+            "    - https://dns.alidns.com/dns-query\n",
+            "    - https://doh.pub/dns-query\n",
+            "  proxy-server-nameserver:\n",
+            "    - 223.5.5.5\n",
+            "    - 119.29.29.29\n",
+            "  respect-rules: true\n",
+        ));
     }
 
     pub(super) fn listing(&mut self, group: &Group, health: &str) {
